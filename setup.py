@@ -13,10 +13,10 @@ setup(
     description='Integrate amqp into guillotina',
     long_description=README,
     install_requires=[
-        'guillotina==3.2.18',
+        'guillotina>=3.2.18',
         'aioamqp',
         'lru-dict',
-        'guillotina_rediscache<=2.0.4',
+        'guillotina_rediscache>=1.3.4',
     ],
     author='Nathan Van Gheem',
     author_email='vangheem@gmail.com',
@@ -36,7 +36,7 @@ setup(
             'pytest-aiohttp',
             'pytest-cov',
             'coverage>=4.4',
-            'pytest-docker-fixtures[rabbitmq]==1.2.7',
+            'pytest-docker-fixtures[rabbitmq]>=1.2.7',
         ]
     },
     license='BSD',
