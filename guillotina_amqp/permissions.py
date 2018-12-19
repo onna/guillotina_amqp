@@ -1,5 +1,4 @@
 from guillotina import configure
-from guillotina import permissions
 
 
 # Add new permission
