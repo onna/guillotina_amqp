@@ -1,5 +1,5 @@
 from guillotina import configure
-from guillotina.response import HTTPNotFound
+from aiohttp.web_exceptions import HTTPNotFound
 from .state import TaskState
 from .state import get_state_manager
 from .exceptions import TaskNotFoundException
@@ -25,9 +25,7 @@ async def info_task(context, request):
         task = TaskState(request.matchdict['task_id'])
         return await task.get_state()
     except TaskNotFoundException:
-        raise HTTPNotFound(content={
-            'reason': 'Task not found'
-        })
+        raise HTTPNotFound(reason='Task not found')
 
 
 @configure.service(
@@ -39,6 +37,4 @@ async def cancel_task(context, request):
     try:
         return await task.cancel()
     except TaskNotFoundException:
-        raise HTTPNotFound(content={
-            'reason': 'Task not found'
-        })
+        raise HTTPNotFound(reason='Task not found')
