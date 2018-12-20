@@ -1,8 +1,7 @@
-
-2.0.4 (unreleased)
+2.1.0 (unreleased)
 ------------------
 
-- Nothing changed yet.
+Backports all 2.0.x changes to guillotina 3.2.18 [lferran]
 
 
 2.0.3 (2018-12-19)

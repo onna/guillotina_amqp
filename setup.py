@@ -9,14 +9,14 @@ except IOError:
 
 setup(
     name='guillotina_amqp',
-    version='2.0.4.dev0',
+    version='2.1.0.dev0',
     description='Integrate amqp into guillotina',
     long_description=README,
     install_requires=[
-        'guillotina>=4.0.0',
+        'guillotina>=3.2.18',
         'aioamqp',
         'lru-dict',
-        'guillotina_rediscache>=2.0.4',
+        'guillotina_rediscache>=1.3.4',
     ],
     author='Nathan Van Gheem',
     author_email='vangheem@gmail.com',
@@ -36,7 +36,7 @@ setup(
             'pytest-aiohttp',
             'pytest-cov',
             'coverage>=4.4',
-            'pytest-docker-fixtures[rabbitmq]==1.2.5',
+            'pytest-docker-fixtures[rabbitmq]>=1.2.7',
         ]
     },
     license='BSD',
