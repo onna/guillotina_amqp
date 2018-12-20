@@ -33,7 +33,18 @@ testing.configure_with(base_settings_configurator)
 
 
 @pytest.fixture('function')
-def amqp_worker(loop, rabbitmq_container):
+def amqp_worker(loop):
+    _worker = Worker(loop=loop)
+    loop.run_until_complete(_worker.start())
+    yield _worker
+    for conn in [v for v in app_settings['amqp'].get('connections', []).values()]:
+        loop.run_until_complete(conn['protocol'].close())
+    _worker.cancel()
+    app_settings['amqp']['connections'] = {}
+
+
+@pytest.fixture('function')
+def amqp_worker_rabbitmq(loop, rabbitmq_container):
     amqp.logger.setLevel(10)
 
     # Create worker

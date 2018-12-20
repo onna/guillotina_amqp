@@ -1,7 +1,12 @@
+2.1.1 (unreleased)
+------------------
+
+- Puts back a previously existing fixture [lferran]
+
 2.1.0 (unreleased)
 ------------------
 
-Backports all 2.0.x changes to guillotina 3.2.18 [lferran]
+- Backports all 2.0.x changes to guillotina 3.2.18 [lferran]
 
 
 2.0.3 (2018-12-19)
