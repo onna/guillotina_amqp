@@ -13,10 +13,13 @@ app_settings = {
         "login": "guest",
         "password": "guest",
         "vhost": "/",
-        "heartbeat": 120,  # 2 minutes
+        "heartbeat": 60 * 2,  # <-- 2 minutes
         "exchange": "guillotina",
         "queue": "guillotina",
-        "persistent_manager": "memory"
+        "persistent_manager": "memory",
+        "delayed_ttl": 1000 * 60,  # <-- 1 minute
+        "errored_ttl": 1000 * 60 * 60 * 24 * 7,  # <-- 1 week
+        "beaconttl": 30,  # <-- 30 seconds
     },
     'commands': {
         "amqp-worker": "guillotina_amqp.commands.worker.WorkerCommand"
