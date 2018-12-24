@@ -44,8 +44,8 @@ class Worker:
         self.QUEUE_MAIN = app_settings['amqp']['queue']
         self.QUEUE_ERRORED = app_settings['amqp']['queue'] + '-error'
         self.QUEUE_DELAYED = app_settings['amqp']['queue'] + '-delay'
-        self.TTL_ERRORED = app_settings['amqp']['errored_ttl']
-        self.TTL_DELAYED = app_settings['amqp']['delayed_ttl']
+        self.TTL_ERRORED = app_settings['amqp']['errored_ttl_ms']
+        self.TTL_DELAYED = app_settings['amqp']['delayed_ttl_ms']
 
     @property
     def state_manager(self):
