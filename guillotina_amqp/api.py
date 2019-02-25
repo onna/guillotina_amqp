@@ -10,7 +10,7 @@ from .exceptions import TaskNotFoundException
     context=IContainer,
     method='GET', name='@amqp-tasks',
     permission='guillotina.ManageAMQP',
-    summary='Returns the list of running tasks')
+    summary='Returns the complete list of tasks')
 async def list_tasks(context, request):
     mngr = get_state_manager()
     ret = []
