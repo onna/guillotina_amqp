@@ -16,7 +16,7 @@ setup(
         'guillotina>=3.2.18,<4.0.0',
         'aioamqp',
         'lru-dict',
-        'guillotina_rediscache>=1.3.4',
+        'guillotina_rediscache==1.3.4',
     ],
     author='Nathan Van Gheem',
     author_email='vangheem@gmail.com',
