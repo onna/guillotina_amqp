@@ -1,7 +1,7 @@
-2.2.3 (unreleased)
-------------------
+3.0.0
+-----
 
-- nothing done yet
+- Backported to work with guillotina 3.x [lferran]
 
 2.2.2 (2018-03-08)
 ------------------
