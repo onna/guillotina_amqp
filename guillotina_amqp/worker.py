@@ -37,12 +37,12 @@ class Worker:
     total_errored = 0
     max_task_retries = 5
 
-    def __init__(self, request=None, loop=None, _max_running=None):
+    def __init__(self, request=None, loop=None, max_size=None):
         self.request = request
         self.loop = loop
         self._running = []
         self._done = []
-        self._max_running = _max_running or app_settings['amqp'].get('max_running_tasks', 5)
+        self._max_running = max_size or app_settings['amqp'].get('max_running_tasks', 5)
         self._closing = False
         self._state_manager = None
         self._state_ttl = int(app_settings['amqp']['state_ttl'])
