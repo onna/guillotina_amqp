@@ -1,7 +1,12 @@
-2.2.2 (unreleased)
+2.2.3 (unreleased)
 ------------------
 
-- Nothing changed yet.
+- nothing done yet
+
+2.2.2 (2018-03-08)
+------------------
+
+- Fix prefetch count to match max running tasks [lferran]
 
 
 2.2.1 (2019-03-08)
