@@ -10,6 +10,7 @@ import asyncio
 import json
 import logging
 import time
+from datetime import datetime
 
 
 logger = logging.getLogger('guillotina_amqp.worker')
@@ -82,6 +83,8 @@ class Worker:
             'eventlog': [],
         })
         logger.info(f'Received task: {task_id}: {dotted_name}')
+        now = datetime.now().isoformat()
+        logger.info(f'{now} running: {len(self._running)} max: {self._max_size}')
 
         # Block if we reached maximum number of running tasks
         while len(self._running) >= self._max_size:
@@ -245,7 +248,7 @@ class Worker:
         # Declare delayed queue and bind it
         await self.queue_delayed(channel, passive=False)
 
-        await channel.basic_qos(prefetch_count=4)
+        await channel.basic_qos(prefetch_count=self._max_size)
 
         # Configure task consume callback
         await channel.basic_consume(
