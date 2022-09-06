@@ -255,7 +255,7 @@ class Worker:
             logger.debug(f"Task data: {task._job.data}, result: {result}")
         except asyncio.CancelledError as exc:
             # Differentiate intentionally cancelled errors by the associated message.
-            if not 'guillotina_amqp - cancel:' in str(exc):
+            if 'guillotina_amqp - cancel:' not in str(exc):
                 raise
             logger.warning(f"Task got cancelled: {task._job.data}")
             return await self._handle_canceled(task)
