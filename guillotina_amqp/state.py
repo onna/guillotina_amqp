@@ -2,45 +2,46 @@ from guillotina import app_settings
 from guillotina import configure
 from guillotina import glogging
 from guillotina.component import get_utility
+from guillotina_amqp.exceptions import TaskAccessUnauthorized
+from guillotina_amqp.exceptions import TaskAlreadyAcquired
 from guillotina_amqp.exceptions import TaskNotFinishedException
 from guillotina_amqp.exceptions import TaskNotFoundException
-from guillotina_amqp.exceptions import TaskAlreadyAcquired
-from guillotina_amqp.exceptions import TaskAccessUnauthorized
-
 from guillotina_amqp.interfaces import IStateManagerUtility
 from lru import LRU
 
 import asyncio
+import backoff
+import copy
 import json
 import time
 import uuid
-import copy
+
 
 try:
     import aioredis
-    from guillotina_rediscache.cache import get_redis_pool
+    from guillotina.contrib import redis
 except ImportError:
     aioredis = None
 
 
-logger = glogging.getLogger('guillotina_amqp.state')
+logger = glogging.getLogger("guillotina_amqp.state")
 
 DEFAULT_LOCK_TTL_S = 60 * 1  # 1 minute
 
 
 class TaskStatus:
-    SCHEDULED = 'scheduled'
-    CANCELED = 'canceled'
-    RUNNING = 'running'
-    FINISHED = 'finished'
-    ERRORED = 'errored'
+    SCHEDULED = "scheduled"
+    CANCELED = "canceled"
+    RUNNING = "running"
+    FINISHED = "finished"
+    ERRORED = "errored"
 
 
-@configure.utility(provides=IStateManagerUtility, name='memory')
+@configure.utility(provides=IStateManagerUtility, name="memory")
 class MemoryStateManager:
-    '''
+    """
     Meaningless for anyting other than tests
-    '''
+    """
 
     def __init__(self, size=10):
         self.size = size
@@ -68,13 +69,14 @@ class MemoryStateManager:
         for task_id in self._data.keys():
             yield task_id
 
-    async def acquire(self, task_id, ttl):
+    async def acquire(self, task_id: str, ttl: int) -> None:
         already_locked = await self.is_locked(task_id)
         if already_locked:
             raise TaskAlreadyAcquired(task_id)
 
         # Set new lock
         from guillotina_amqp.utils import TimeoutLock
+
         lock = TimeoutLock(self.worker_id)
         await lock.acquire(ttl=ttl)
         self._locks[task_id] = lock
@@ -103,7 +105,7 @@ class MemoryStateManager:
             raise TaskNotFoundException(task_id)
 
         if not await self.is_locked(task_id):
-            raise Exception(f'Task {task_id} is not locked')
+            raise Exception(f"Task {task_id} is not locked")
 
         if not await self.is_mine(task_id):
             # You can't refresh a lock that's not yours
@@ -147,31 +149,30 @@ def get_state_manager(loop=None):
     Currently we have two implementations: memory | redis
     """
     utility = get_utility(
-        IStateManagerUtility,
-        name=app_settings['amqp']['persistent_manager'],
+        IStateManagerUtility, name=app_settings["amqp"]["persistent_manager"]
     )
     if loop:
         utility.set_loop(loop)
     return utility
 
 
-@configure.utility(provides=IStateManagerUtility, name='redis')
+@configure.utility(provides=IStateManagerUtility, name="redis")
 class RedisStateManager:
-    '''Implementation of the IStateManagerUtility with Redis
-    '''
+    """Implementation of the IStateManagerUtility with Redis
+    """
 
     def __init__(self, loop=None):
-        self._cache_prefix = app_settings.get('redis_prefix_key', 'amqpjobs-')
+        self._cache_prefix = app_settings.get("redis_prefix_key", "amqpjobs-")
         self.loop = loop
         self._cache = None
         self.worker_id = uuid.uuid4().hex
 
     def lock_prefix(self, task_id):
-        return f'{self._cache_prefix}lock:{task_id}'
+        return f"{self._cache_prefix}lock:{task_id}"
 
     @property
     def cancel_prefix(self):
-        return f'{self._cache_prefix}cancel'
+        return f"{self._cache_prefix}cancel"
 
     def set_loop(self, loop=None):
         if loop:
@@ -182,12 +183,12 @@ class RedisStateManager:
             return None
 
         if aioredis is None:
-            logger.warning('guillotina_rediscache not installed')
+            logger.warning("aioredis not installed")
             self._cache = _EMPTY
             return None
 
-        if 'redis' in app_settings:
-            self._cache = aioredis.Redis(await get_redis_pool(loop=self.loop))
+        if "redis" in app_settings:
+            self._cache = RetriableRedis((await redis.get_driver()).pool)
             return self._cache
         else:
             self._cache = _EMPTY
@@ -204,8 +205,7 @@ class RedisStateManager:
                 # Update existing with new data
                 value = json.loads(existing)
                 value.update(data)
-            await cache.set(
-                self._cache_prefix + task_id, json.dumps(value))
+            await cache.set(self._cache_prefix + task_id, json.dumps(value))
             if ttl:
                 resp = await cache.expire(self._cache_prefix + task_id, ttl)
                 return resp > 0
@@ -224,10 +224,10 @@ class RedisStateManager:
 
     async def list(self):
         cache = await self.get_cache()
-        async for key in cache.iscan(match=f'{self._cache_prefix}*'):
-            yield key.decode().replace(self._cache_prefix, '')
+        async for key in cache.iscan(match=f"{self._cache_prefix}*"):
+            yield key.decode().replace(self._cache_prefix, "")
 
-    async def acquire(self, task_id, ttl):
+    async def acquire(self, task_id: str, ttl: int) -> None:
         if await self.is_locked(task_id):
             raise TaskAlreadyAcquired(task_id)
 
@@ -235,7 +235,7 @@ class RedisStateManager:
         cache = await self.get_cache()
         resp = await cache.setnx(self.lock_prefix(task_id), self.worker_id)
         if not resp:
-            raise Exception(f'Error acquiring {task_id}')
+            raise Exception(f"Error acquiring {task_id}")
 
         # Need to set an expiration for the lock in redis at creation
         # time
@@ -281,8 +281,7 @@ class RedisStateManager:
     async def cancel(self, task_id):
         cache = await self.get_cache()
         current_time = time.time()
-        resp = await cache.zadd(self.cancel_prefix,
-                                current_time, task_id)
+        resp = await cache.zadd(self.cancel_prefix, current_time, task_id)
         return resp > 0
 
     async def cancelation_list(self):
@@ -302,7 +301,8 @@ class RedisStateManager:
         return False
 
     async def _clean(self):
-        await self._cache.flushall()
+        cache = await self.get_cache()
+        await cache.flushall()
 
 
 class TaskState:
@@ -319,8 +319,11 @@ class TaskState:
             data = await util.get(self.task_id)
             if not data:
                 raise TaskNotFoundException(self.task_id)
-            if data.get('status') in (TaskStatus.FINISHED, TaskStatus.ERRORED,
-                                      TaskStatus.CANCELED):
+            if data.get("status") in (
+                TaskStatus.FINISHED,
+                TaskStatus.ERRORED,
+                TaskStatus.CANCELED,
+            ):
                 return data
             await asyncio.sleep(wait)
 
@@ -332,28 +335,28 @@ class TaskState:
         return data
 
     async def get_status(self):
-        '''
+        """
         possible statuses:
         - scheduled
         - canceled
         - running
         - finished
         - errored
-        '''
+        """
         util = get_state_manager()
         data = await util.get(self.task_id)
         if not data:
             raise TaskNotFoundException(self.task_id)
-        return data.get('status')
+        return data.get("status")
 
     async def get_result(self):
         util = get_state_manager()
         data = await util.get(self.task_id)
         if not data:
             raise TaskNotFoundException(self.task_id)
-        if data.get('status') not in (TaskStatus.FINISHED, TaskStatus.ERRORED):
+        if data.get("status") not in (TaskStatus.FINISHED, TaskStatus.ERRORED):
             raise TaskNotFinishedException(self.task_id)
-        return data.get('result')
+        return data.get("result")
 
     async def cancel(self):
         util = get_state_manager()
@@ -365,12 +368,12 @@ class TaskState:
         # Cancel it
         return await util.cancel(self.task_id)
 
-    async def acquire(self, ttl=DEFAULT_LOCK_TTL_S):
+    async def acquire(self, ttl=DEFAULT_LOCK_TTL_S) -> bool:
         util = get_state_manager()
         try:
             await util.acquire(self.task_id, ttl)
         except TaskAlreadyAcquired:
-            logger.warning(f'Task {self.task_id} is already taken')
+            logger.warning(f"Task {self.task_id} is already taken")
             return False
         else:
             return True
@@ -388,52 +391,119 @@ class TaskState:
         return await util.is_canceled(self.task_id)
 
 
-async def update_task_status(state_manager, task_id, status, task=None, ttl=None,
-                             result=None, **kwargs):
+async def update_task_status(
+    state_manager, task_id, status, task=None, ttl=None, result=None, **kwargs
+):
     if ttl is None:
-        ttl = int(app_settings['amqp']['state_ttl'])
+        ttl = int(app_settings["amqp"]["state_ttl"])
 
-    task_data = {
-        'status': status
-    }
+    task_data = {"status": status}
 
     if result:
-        task_data['result'] = result
+        task_data["result"] = result
 
     task_data.update(**kwargs)
 
     await state_manager.update(task_id, task_data, ttl=ttl)
 
 
-async def update_task_errored(state_manager, task_id, task=None, ttl=None,
-                              result=None, **kwargs):
-    await update_task_status(state_manager, task_id, TaskStatus.ERRORED,
-                             task=task, ttl=ttl, result=result,
-                             error=task.print_stack() if task else None,
-                             **kwargs)
+async def update_task_errored(
+    state_manager, task_id, task=None, ttl=None, result=None, **kwargs
+):
+    await update_task_status(
+        state_manager,
+        task_id,
+        TaskStatus.ERRORED,
+        task=task,
+        ttl=ttl,
+        result=result,
+        error=task.print_stack() if task else None,
+        **kwargs,
+    )
 
 
-async def update_task_finished(state_manager, task_id, task=None, ttl=None,
-                               result=None, **kwargs):
-    await update_task_status(state_manager, task_id, TaskStatus.FINISHED,
-                             task=task, ttl=ttl, result=result, **kwargs)
+async def update_task_finished(
+    state_manager, task_id, task=None, ttl=None, result=None, **kwargs
+):
+    await update_task_status(
+        state_manager,
+        task_id,
+        TaskStatus.FINISHED,
+        task=task,
+        ttl=ttl,
+        result=result,
+        **kwargs,
+    )
 
 
-async def update_task_scheduled(state_manager, task_id, task=None, ttl=None,
-                                result=None, **kwargs):
-    await update_task_status(state_manager, task_id, TaskStatus.SCHEDULED,
-                             task=task, ttl=ttl, result=result, **kwargs)
+async def update_task_scheduled(
+    state_manager, task_id, task=None, ttl=None, result=None, **kwargs
+):
+    await update_task_status(
+        state_manager,
+        task_id,
+        TaskStatus.SCHEDULED,
+        task=task,
+        ttl=ttl,
+        result=result,
+        **kwargs,
+    )
 
 
-async def update_task_canceled(state_manager, task_id, task=None, ttl=None,
-                               result=None, **kwargs):
-    await update_task_status(state_manager, task_id, TaskStatus.CANCELED,
-                             task=task, ttl=ttl, result=result,
-                             error=task.print_stack() if task else None,
-                             **kwargs)
+async def update_task_canceled(
+    state_manager, task_id, task=None, ttl=None, result=None, **kwargs
+):
+    await update_task_status(
+        state_manager,
+        task_id,
+        TaskStatus.CANCELED,
+        task=task,
+        ttl=ttl,
+        result=result,
+        error=task.print_stack() if task else None,
+        **kwargs,
+    )
 
 
-async def update_task_running(state_manager, task_id, task=None, ttl=None,
-                              result=None, **kwargs):
-    await update_task_status(state_manager, task_id, TaskStatus.RUNNING,
-                             task=task, ttl=ttl, result=result, **kwargs)
+async def update_task_running(
+    state_manager, task_id, task=None, ttl=None, result=None, **kwargs
+):
+    await update_task_status(
+        state_manager,
+        task_id,
+        TaskStatus.RUNNING,
+        task=task,
+        ttl=ttl,
+        result=result,
+        **kwargs,
+    )
+
+
+REDIS_RETRIABLE_EXCEPTIONS = (ConnectionResetError,)
+
+
+class RetriableRedis(aioredis.Redis):
+    def __getattribute__(self, name):
+        original = super().__getattribute__(name)
+
+        if name in (
+            "get",
+            "set",
+            "expire",
+            "setnx",
+            "delete",
+            "zadd",
+            "zrem",
+            "flushall",
+        ):
+            return retriable_func(original)
+
+        return original
+
+
+def retriable_func(func):
+    @backoff.on_exception(backoff.expo, REDIS_RETRIABLE_EXCEPTIONS, max_tries=4)
+    async def decorated_func(*args, **kw):
+        return await func(*args, **kw)
+
+    return decorated_func

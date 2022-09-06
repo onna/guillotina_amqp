@@ -1,0 +1,46 @@
+name: guillotina_amqp
+
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.7, 3.8]
+
+    steps:
+      # Checkout the repository first
+      - uses: actions/checkout@v2
+
+      # Setup the python version
+      - name: Setup Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v1
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # Linters and typing
+      - name: Pre-checks
+        run: |
+          # Install
+          pip install flake8 "isort<5" black==19.10b0 mypy mypy_zope
+
+          # Run commands
+          flake8 guillotina_amqp --config=setup.cfg
+          isort -c -rc guillotina_amqp
+          black --check --verbose guillotina_amqp
+          mypy -p guillotina_amqp --ignore-missing-imports
+
+      # Run tests
+      - name: Run tests
+        run: |
+          # Install package with test dependecies
+          pip install -e .[test]
+
+          # Run tests
+          pytest --capture=no --tb=native -v guillotina_amqp --cov=guillotina_amqp --cov-report xml --cov-append guillotina_amqp
+
+          # install codecov library
+          pip install codecov
+
+          codecov --url="https://open-coverage.org/api" --token=14396163 --slug=guillotinaweb/guillotina_amqp

@@ -1,13 +1,251 @@
-2.2.3 (unreleased)
+6.0.0 (unreleased)
+-------------------
+
+- Lower default number of max_running_tasks, as each task is
+  potentially a different connection to the database.
+- Allow to retry tasks forever
+- Moved to guillotina 6 and python 3.8
+- Moved away from travis and use github actions
+ [lferran]
+- Fixed serialization/deserialization of request data
+
+5.0.20 (2020-03-09)
+-------------------
+
+- Ack canceled tasks so they are cleaned up from the main queue
+  [lferran]
+
+
+5.0.19 (2020-03-05)
+-------------------
+
+- Filter job_data in task info if the requester is not root [acatlla]
+
+
+5.0.18 (2020-02-28)
+-------------------
+
+- Handle KeyError when attempting to queue tasks but amqp settings are
+  not present [lferran]
+
+5.0.17 (2020-02-15)
+-------------------
+
+- Fix unsafe thread operation: creating asyncio task from another thread
+  [vangheem]
+
+5.0.16 (2020-01-31)
+-------------------
+
+- Fix after commit handler [vangheem]
+
+
+5.0.15 (2019-12-23)
+-------------------
+
+- Retry rabbitQM TimeoutErrors [lferran]
+
+5.0.14 (2019-12-20)
+-------------------
+
+- bump
+
+
+5.0.13 (2019-12-20)
+-------------------
+
+- Retry ConnectionResetError on redis [lferran]
+
+5.0.12 (2019-11-14)
+-------------------
+
+- Retry if rabbitmq is down when getting new connections [lferran]
+
+
+5.0.11 (2019-11-05)
+-------------------
+
+- add py.typed to manifest
+
+
+5.0.10 (2019-11-05)
+-------------------
+
+- bump
+
+
+5.0.9 (2019-11-01)
 ------------------
 
-- nothing done yet
+- Be able to import types
 
-2.2.2 (2018-03-08)
+
+5.0.8 (2019-10-31)
 ------------------
 
-- Fix prefetch count to match max running tasks [lferran]
+- Schedule NOOP tasks from worker to prevent channel from hanging
+  [lferran]
 
+5.0.7 (2019-10-29)
+------------------
+
+- Do not exit when tasks are running
+
+
+5.0.6 (2019-10-28)
+------------------
+
+- safe exit
+
+
+5.0.5 (2019-10-27)
+------------------
+
+- Better handling in tests
+  [vangheem]
+
+
+5.0.4 (2019-10-27)
+------------------
+
+- Restart worker if no connection activity in last 5 minutes [lferran]
+
+5.0.3 (2019-10-25)
+------------------
+
+- Removed beacon system [lferran]
+
+
+5.0.2 (2019-09-03)
+------------------
+
+- Exit worker on error starting up.
+  [vangheem]
+
+
+5.0.1 (2019-09-02)
+------------------
+
+- Fix self.request
+  [qiwn]
+
+
+5.0.0 (2019-08-30)
+------------------
+
+- Upgrade to guillotina 5
+
+
+3.1.5 (2019-06-18)
+------------------
+
+- restrict compat g version
+
+
+3.1.4 (2019-06-10)
+------------------
+
+- Copy all headers from original request to task
+  [vangheem]
+
+
+3.1.3 (2019-06-06)
+------------------
+
+- Log exception with unhandled task errors
+  [vangheem]
+
+
+3.1.1 (2019-05-22)
+------------------
+
+- Include actual callable in metrics labels
+
+
+3.1.0 (2019-05-21)
+------------------
+
+- Optionally serve /metrics for prometheus metrics
+
+
+3.0.5 (2019-05-14)
+------------------
+
+- Fix metrics
+
+
+3.0.4 (2019-05-14)
+------------------
+
+- Add container id label in metric [lferran]
+
+
+3.0.3 (2019-05-14)
+------------------
+
+- Add prometheus metrics [lferran]
+
+
+3.0.2 (2019-05-14)
+------------------
+
+- Provide b/w compatible `@amqp-info` and `@amqp-cancel` endpoints. Marked for complete
+  removal in version 4.
+  [vangheem]
+
+
+3.0.0 (2019-05-13)
+------------------
+
+- Rename `DELETE @amqp-cancel/{task_id}` to `DELETE @amqp-tasks/{task_id}`
+  [vangheem]
+
+- Rename `GET @amqp-info/{task_id}` to `GET @amqp-tasks/{task_id}`
+  [vangheem]
+
+- API methods should be constrained to only work against a container
+  [vangheem]
+
+
+2.2.7 (2019-04-29)
+------------------
+
+- Make sure `max_running_tasks` is always an integer
+  [vangheem]
+
+
+2.2.6 (2019-04-16)
+------------------
+
+- Fix releasing task
+  [vangheem]
+
+
+2.2.5 (2019-04-16)
+------------------
+
+- Fix issue where tasks would never be scheduled or consuming
+  would be extremely slow
+  [vangheem]
+
+
+2.2.4 (2019-04-16)
+------------------
+
+- Fix spamming when waiting for tasks to finish
+  [vangheem]
+
+2.2.3 (2019-04-04)
+------------------
+
+- Do not retry tasks for objects that are no longer in the database
+  [lferran]
+
+2.2.2 (2019-03-08)
+------------------
+
+- Bugfix: make prefetch count match the configured max running tasks
+  [lferran]
 
 2.2.1 (2019-03-08)
 ------------------
