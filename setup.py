@@ -3,51 +3,54 @@ from setuptools import setup
 
 
 try:
-    README = open('README.rst').read()
+    README = open("README.rst").read()
 except IOError:
     README = None
 
 setup(
-    name='guillotina_amqp',
-    version='2.2.3.dev0',
-    description='Integrate amqp into guillotina',
+    name="guillotina_amqp",
+    version="6.0.0",
+    description="Integrate amqp into guillotina",
     long_description=README,
     install_requires=[
-        'guillotina>=4.0.0',
-        'aioamqp',
-        'lru-dict',
-        'guillotina_rediscache>=2.0.4',
+        "guillotina>=6.0.0<7",
+        "aiohttp>=3.6.0,<4.0.0",
+        "aioamqp",
+        "lru-dict",
+        "aioredis",
+        "backoff",
+        "mypy-extensions",
     ],
-    author='Nathan Van Gheem',
-    author_email='vangheem@gmail.com',
-    url='https://github.com/guillotinaweb/guillotina_amqp',
-    packages=find_packages(exclude=['demo']),
+    author="Nathan Van Gheem",
+    author_email="vangheem@gmail.com",
+    url="https://github.com/guillotinaweb/guillotina_amqp",
+    packages=find_packages(exclude=["demo"]),
     include_package_data=True,
-    tests_require=[
-        'pytest'
-    ],
+    package_data={"": ["*.txt", "*.rst"], "guillotina_amqp": ["py.typed"]},
+    tests_require=["pytest"],
     extras_require={
-        'test': [
-            'pytest>=4.1.1',
-            'docker',
-            'backoff',
-            'psycopg2',
-            'psycopg2-binary',
-            'pytest-asyncio>=0.8.0',
-            'pytest-cov>=2.6.1',
-            'coverage>=4.4',
-            'pytest-docker-fixtures[rabbitmq]==1.2.5',
+        "test": [
+            "asynctest>=0.13.0",
+            "pytest>=3.8.0<=5.0.0",
+            "docker",
+            "psycopg2-binary",
+            "pytest-asyncio>=0.12.0",
+            "pytest-cov>=2.6.1",
+            "coverage>=4.4",
+            "pytest-docker-fixtures[rabbitmq]==1.3.5",
+            "async_asgi_testclient==1.4.4",
+            "prometheus-client",
         ]
     },
-    license='BSD',
+    license="BSD",
     classifiers=[
-        'License :: OSI Approved :: BSD License',
-        'Programming Language :: Python :: 3.6',
-        'Programming Language :: Python :: 3.7',
-        'Topic :: Software Development :: Libraries :: Python Modules',
-        'Topic :: Internet :: WWW/HTTP',
-        'Intended Audience :: Developers',
+        "License :: OSI Approved :: BSD License",
+        "Development Status :: 3 - Alpha",
+        "Programming Language :: Python :: 3.7",
+        "Programming Language :: Python :: 3.8",
+        "Topic :: Software Development :: Libraries :: Python Modules",
+        "Topic :: Internet :: WWW/HTTP",
+        "Intended Audience :: Developers",
     ],
-    entry_points={
-    }
+    entry_points={},
 )

@@ -1,27 +1,36 @@
 from guillotina import app_settings
+from guillotina import glogging
+from guillotina import task_vars
 from guillotina.interfaces import Allow
 from guillotina.interfaces import IAbsoluteURL
+from guillotina.interfaces import IRequest
+from guillotina.utils import get_authenticated_user
 from guillotina.utils import get_content_path
 from guillotina.utils import get_current_request
 from guillotina.utils import get_dotted_name
 from guillotina.utils import navigate_to
 from guillotina.utils import resolve_dotted_name
+from guillotina.utils.misc import get_current_container
 from guillotina_amqp import amqp
+from guillotina_amqp.exceptions import AMQPConfigurationNotFoundError
+from guillotina_amqp.exceptions import ObjectNotFoundException
 from guillotina_amqp.interfaces import ITaskDefinition
 from guillotina_amqp.state import get_state_manager
 from guillotina_amqp.state import TaskState
 from guillotina_amqp.state import update_task_scheduled
-from guillotina import glogging
+from guillotina_amqp.types import SerializedRequest
+from typing import cast
+from urllib.parse import urlparse
 
-import inspect
 import aioamqp
+import asyncio
+import inspect
 import json
 import time
 import uuid
-import asyncio
 
 
-logger = glogging.getLogger('guillotina_amqp.utils')
+logger = glogging.getLogger("guillotina_amqp.utils")
 
 
 async def cancel_task(task_id):
@@ -33,69 +42,72 @@ async def cancel_task(task_id):
     return success
 
 
-async def add_task(func, *args, _request=None, _retries=3, **kwargs):
+def get_task_id_prefix():
+    db = task_vars.db.get()
+    container = task_vars.container.get()
+    return "task:{}-{}-".format(db.id, container.id)
+
+
+def generate_task_id():
+    container = task_vars.container.get()
+    if container is not None:
+        return "{}{}".format(get_task_id_prefix(), str(uuid.uuid4()))
+    return str(uuid.uuid4())
+
+
+async def add_task(func, *args, _request=None, _retries=3, _task_id=None, **kwargs):
     """Given a function and its arguments, it adds it as a task to be ran
     by workers.
     """
     # Get the request and prepare request data
     if _request is None:
         _request = get_current_request()
+    req_data: SerializedRequest = serialize_request(_request)
 
-    req_data = {
-        'url': str(_request.url),
-        'headers': dict(_request.headers),
-        'method': _request.method,
-        'annotations': getattr(_request, 'annotations', {})
-    }
-    try:
-        participation = _request.security.participations[0]
-        user = participation.principal
-        req_data['user'] = {
-            'id': user.id,
-            'roles': [name for name, setting in user.roles.items()
-                      if setting == Allow],
-            'groups': user.groups,
-            'Authorization': _request.headers.get('Authorization'),
-            'data': getattr(user, 'data', {})
-        }
-    except (AttributeError, IndexError):
-        pass
+    if _task_id is None:
+        task_id = generate_task_id()
+    else:
+        task_id = _task_id
 
-    if getattr(_request, 'container', None):
-        req_data['container_url'] = IAbsoluteURL(_request.container, _request)()
+    dotted_name = get_dotted_name(func)
 
     retries = 0
     while True:
         # Get the rabbitmq connection
-        channel, transport, protocol = await amqp.get_connection()
         try:
-            task_id = str(uuid.uuid4())
+            channel, transport, protocol = await amqp.get_connection()
+        except AMQPConfigurationNotFoundError:
+            logger.warning(
+                f"Could not schedule {dotted_name}, AMQP settings not configured"
+            )
+            return
+        try:
             state = TaskState(task_id)
-            dotted_name = get_dotted_name(func)
-            logger.info(f'Scheduling task: {task_id}: {dotted_name}')
-            data = json.dumps({
-                'func': dotted_name,
-                'args': args,
-                'kwargs': kwargs,
-                'db_id': getattr(_request, '_db_id', None),
-                'container_id': getattr(_request, '_container_id', None),
-                'req_data': req_data,
-                'task_id': task_id
-            })
+            db = task_vars.db.get()
+            container = task_vars.container.get()
+            logger.info(f"Scheduling task: {task_id}: {dotted_name}")
+            data = json.dumps(
+                {
+                    "func": dotted_name,
+                    "args": args,
+                    "kwargs": kwargs,
+                    "db_id": getattr(db, "id", None),
+                    "container_id": getattr(container, "id", None),
+                    "req_data": req_data,
+                    "task_id": task_id,
+                }
+            )
             # Publish task data on rabbitmq
             await channel.publish(
                 data,
-                exchange_name=app_settings['amqp']['exchange'],
-                routing_key=app_settings['amqp']['queue'],
-                properties={
-                    'delivery_mode': 2
-                }
+                exchange_name=app_settings["amqp"]["exchange"],
+                routing_key=app_settings["amqp"]["queue"],
+                properties={"delivery_mode": 2},
             )
             # Update tasks's global state
             state_manager = get_state_manager()
-            await update_task_scheduled(state_manager, task_id,
-                                        updated=time.time())
-            logger.info(f'Scheduled task: {task_id}: {dotted_name}')
+            await update_task_scheduled(state_manager, task_id, updated=time.time())
+            logger.info(f"Scheduled task: {task_id}: {dotted_name}")
             return state
         except (aioamqp.AmqpClosedConnection, aioamqp.exceptions.ChannelClosed):
             await amqp.remove_connection()
@@ -105,8 +117,12 @@ async def add_task(func, *args, _request=None, _retries=3, **kwargs):
 
 
 async def _prepare_func(dotted_func, path, *args, **kwargs):
-    request = get_current_request()
-    ob = await navigate_to(request.container, path)
+    container = get_current_container()
+    try:
+        ob = await navigate_to(container, path)
+    except KeyError:
+        logger.warning(f"Object in {path} not found")
+        raise ObjectNotFoundException
     func = resolve_dotted_name(dotted_func)
     if ITaskDefinition.providedBy(func):
         func = func.func
@@ -124,15 +140,22 @@ async def _yield_object_task(dotted_func, path, *args, **kwargs):
         yield res
 
 
-async def add_object_task(callable=None, ob=None, *args,
-                          _request=None, _retries=3, **kwargs):
+async def add_object_task(
+    callable=None, ob=None, *args, _request=None, _retries=3, **kwargs
+):
     superfunc = _run_object_task
     if inspect.isasyncgenfunction(callable):
         # async generators need to be yielded from
         superfunc = _yield_object_task
     return await add_task(
-        superfunc, get_dotted_name(callable), get_content_path(ob), *args,
-        _request=_request, _retries=_retries, **kwargs)
+        superfunc,
+        get_dotted_name(callable),
+        get_content_path(ob),
+        *args,
+        _request=_request,
+        _retries=_retries,
+        **kwargs,
+    )
 
 
 class TimeoutLock(object):
@@ -176,3 +199,80 @@ class TimeoutLock(object):
         # Overwrite old lock and acquire with new timeout
         self._lock = asyncio.Lock()
         return await self.acquire(ttl)
+
+
+def metric_measure(metric, value, labels=None):
+    if not metric:
+        # Don't measure if prometheus client is not installed
+        return
+
+    try:
+        labels = labels or {}
+        try:
+            if labels:
+                labeled = metric.labels(**labels)
+            else:
+                labeled = metric
+            try:
+                labeled.observe(value)
+            except AttributeError:
+                labeled.set(value)
+        except AttributeError:
+            metric.set(value)
+    except Exception:
+        logger.error("Failed to measure metric", exc_info=True)
+        pass
+
+
+def serialize_request(request: IRequest) -> SerializedRequest:
+    """Serializes request data so that it can be sent to rabbitmq
+    """
+    req_data = {
+        "url": str(request.url),
+        "headers": dict(request.headers),
+        "method": request.method,
+        "annotations": getattr(request, "annotations", {}),
+    }
+    user = get_authenticated_user()
+    if user is not None:
+        try:
+            req_data["user"] = {
+                "id": user.id,
+                "roles": [
+                    name
+                    for name, setting in user.roles.items()  # type: ignore
+                    if setting == Allow
+                ],
+                "groups": user.groups,
+                "headers": dict(request.headers),
+                "data": getattr(user, "data", {}),
+            }
+        except AttributeError:
+            pass
+
+    container = task_vars.container.get()
+    if container is not None:
+        req_data["container_url"] = IAbsoluteURL(container, request)()  # type: ignore
+
+    return cast(SerializedRequest, req_data)
+
+
+def make_request(base_request, serialized: SerializedRequest) -> IRequest:
+    """Reconstructs a request object for the job object to run the task
+    off from the serialized data
+    """
+    parsed = urlparse(serialized["url"])
+    request = base_request.__class__(
+        base_request.scheme,
+        serialized["method"],
+        parsed.path,
+        parsed.query.encode("utf-8"),
+        tuple(
+            (str(k).encode("utf-8"), str(v).encode("utf-8"))
+            for k, v in serialized["headers"].items()
+        ),
+        client_max_size=base_request._client_max_size,
+    )
+    request.annotations = serialized["annotations"]
+    request._state = base_request._state.copy()
+    return request

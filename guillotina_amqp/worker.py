@@ -1,22 +1,44 @@
 from guillotina import app_settings
+from guillotina import glogging
 from guillotina_amqp import amqp
-from guillotina_amqp.exceptions import TaskAlreadyAcquired
-from guillotina_amqp.exceptions import TaskAlreadyCanceled
 from guillotina_amqp.job import Job
 from guillotina_amqp.state import get_state_manager
-from guillotina_amqp.state import update_task_errored
-from guillotina_amqp.state import update_task_scheduled
-from guillotina_amqp.state import update_task_finished
-from guillotina_amqp.state import update_task_canceled
 from guillotina_amqp.state import TaskState
-from guillotina import glogging
+from guillotina_amqp.state import TaskStatus
+from guillotina_amqp.state import update_task_canceled
+from guillotina_amqp.state import update_task_errored
+from guillotina_amqp.state import update_task_finished
+from guillotina_amqp.state import update_task_scheduled
+from guillotina_amqp.utils import metric_measure
 
 import asyncio
+import guillotina_amqp
 import json
+import os
 import time
 
 
-logger = glogging.getLogger('guillotina_amqp.worker')
+try:
+    from prometheus_client import Gauge
+    from prometheus_client import Histogram
+
+    amqp_running_jobs = Gauge(
+        "amqp_running_jobs", "Number of AQMP running jobs in worker", []
+    )
+
+    amqp_job_duration = Histogram(
+        "amqp_job_duration",
+        "AMQP job duration histogram",
+        ["dotted_name", "final_status", "container_id"],
+    )
+
+except ImportError:
+    # Do not record metrics if prometheus_client not installed
+    amqp_running_jobs = None
+    amqp_job_duration = None
+
+
+logger = glogging.getLogger("guillotina_amqp.worker")
 default_delayed = 1000 * 60 * 2  # 2 minutes
 default_errored = 1000 * 60 * 60 * 24 * 7 * 1  # 1 week
 
@@ -30,30 +52,35 @@ class Worker:
     results.
 
     """
-    sleep_interval = 0.05
+
+    sleep_interval = 0.1
     last_activity = time.time()
     update_status_interval = 20
     total_run = 0
     total_errored = 0
-    max_task_retries = 5
+    _status_task = None
+    _activity_task = None
 
-    def __init__(self, request=None, loop=None, max_size=None):
+    def __init__(self, request=None, loop=None, max_size=None, check_activity=True):
         self.request = request
         self.loop = loop
         self._running = []
-        self._done = []
-        self._max_running = max_size or app_settings['amqp'].get('max_running_tasks', 5)
+        self._max_running = int(
+            max_size or app_settings["amqp"].get("max_running_tasks", 5)
+        )
+        self.max_task_retries = app_settings["amqp"].get("max_task_retries", None)
         self._closing = False
         self._state_manager = None
-        self._state_ttl = int(app_settings['amqp']['state_ttl'])
+        self._state_ttl = int(app_settings["amqp"]["state_ttl"])
+        self._check_activity = check_activity
 
         # RabbitMQ queue names defined here
-        self.MAIN_EXCHANGE = app_settings['amqp']['exchange']
-        self.QUEUE_MAIN = app_settings['amqp']['queue']
-        self.QUEUE_ERRORED = app_settings['amqp']['queue'] + '-error'
-        self.QUEUE_DELAYED = app_settings['amqp']['queue'] + '-delay'
-        self.TTL_ERRORED = app_settings['amqp'].get('errored_ttl_ms', default_errored)
-        self.TTL_DELAYED = app_settings['amqp'].get('delayed_ttl_ms', default_delayed)
+        self.MAIN_EXCHANGE = app_settings["amqp"]["exchange"]
+        self.QUEUE_MAIN = app_settings["amqp"]["queue"]
+        self.QUEUE_ERRORED = app_settings["amqp"]["queue"] + "-error"
+        self.QUEUE_DELAYED = app_settings["amqp"]["queue"] + "-delay"
+        self.TTL_ERRORED = app_settings["amqp"].get("errored_ttl_ms", default_errored)
+        self.TTL_DELAYED = app_settings["amqp"].get("delayed_ttl_ms", default_delayed)
 
     @property
     def state_manager(self):
@@ -71,23 +98,25 @@ class Worker:
         a new task in a rabbitmq queue)
 
         """
-        logger.debug(f'Queued job {body}')
+        logger.debug(f"Queued job {body}")
 
         # Deserialize job description
         if not isinstance(body, str):
-            body = body.decode('utf-8')
+            body = body.decode("utf-8")
         data = json.loads(body)
 
         # Set status to scheduled
-        task_id = data['task_id']
-        dotted_name = data['func']
+        task_id = data["task_id"]
+        dotted_name = data["func"]
 
         await update_task_scheduled(self.state_manager, task_id, eventlog=[])
-        logger.info(f'Received task: {task_id}: {dotted_name}')
+        logger.info(f"Received task: {task_id}: {dotted_name}")
+
+        self.measure_running_jobs(len(self._running))
 
         # Block if we reached maximum number of running tasks
         while len(self._running) >= self._max_running:
-            logger.warning(f'Max running tasks reached: {self._max_running}')
+            logger.info(f"Max running tasks reached: {self._max_running}")
             await asyncio.sleep(self.sleep_interval)
             self.last_activity = time.time()
 
@@ -95,24 +124,23 @@ class Worker:
         self.last_activity = time.time()
         job = Job(self.request, data, channel, envelope)
         # Get the redis lock on the task so no other worker takes it
-        _id = job.data['task_id']
+        _id = job.data["task_id"]
         ts = TaskState(_id)
 
         # Cancelation
         if await ts.is_canceled():
-            logger.warning(f'Task {_id} has already been canceled')
-            raise TaskAlreadyCanceled(_id)
+            logger.warning(f"Task {_id} has already been canceled")
+            # Ack so that canceled job is removed from main queue
+            await channel.basic_client_ack(delivery_tag=envelope.delivery_tag)
+            return
 
-        try:
-            await ts.acquire()
-        except TaskAlreadyAcquired:
-            logger.warning(f'Task {_id} is already running in another worker')
-            # TODO: ACK task
+        if not await ts.acquire():
+            logger.warning(f"Task {_id} is already running in another worker")
+            await channel.basic_client_ack(delivery_tag=envelope.delivery_tag)
+            return
 
         # Record job's data into global state
-        await self.state_manager.update(task_id, {
-            'job_data': job.data,
-        })
+        await self.state_manager.update(task_id, {"job_data": job.data})
 
         # Add the task to the loop and start it
         task = self.loop.create_task(job())
@@ -122,66 +150,95 @@ class Worker:
         task.add_done_callback(self._task_done_callback)
 
     async def _handle_canceled(self, task):
-        self._running.remove(task)
-        task_id = task._job.data['task_id']
+        task_id = task._job.data["task_id"]
         # ACK to main queue to it is not scheduled anymore
         await task._job.channel.basic_client_ack(
-            delivery_tag=task._job.envelope.delivery_tag)
+            delivery_tag=task._job.envelope.delivery_tag
+        )
 
         # Set status to cancelled
-        await update_task_canceled(self.state_manager, task_id,
-                                   task=task, ttl=self._state_ttl)
+        await update_task_canceled(
+            self.state_manager, task_id, task=task, ttl=self._state_ttl
+        )
+
+        self.measure_job_duration(task._job, TaskStatus.CANCELED)
 
     async def _handle_max_retries_reached(self, task):
-        task_id = task._job.data['task_id']
-        logger.warning(
-            f'Task {task_id} reached max {self.max_task_retries} retries')
+        task_id = task._job.data["task_id"]
+        logger.warning(f"Task {task_id} reached max {self.max_task_retries} retries")
 
         # Send NACK, as we exceeded the number of retrials
         await task._job.channel.basic_client_nack(
-            delivery_tag=task._job.envelope.delivery_tag,
-            multiple=False, requeue=False)
+            delivery_tag=task._job.envelope.delivery_tag, multiple=False, requeue=False
+        )
 
         # Update status to errored with the traceback
-        await update_task_errored(self.state_manager, task_id, task=task,
-                                  ttl=self._state_ttl)
+        await update_task_errored(
+            self.state_manager, task_id, task=task, ttl=self._state_ttl
+        )
+
+        self.measure_job_duration(task._job, TaskStatus.ERRORED)
 
     async def _handle_retry(self, task, current_retries):
-        task_id = task._job.data['task_id']
+        task_id = task._job.data["task_id"]
         channel = task._job.channel
-        logger.debug(f'handle_retry: task {task_id} retries {current_retries}')
+        logger.debug(f"handle_retry: task {task_id} retries {current_retries}")
         # Increment retry count
-        await update_task_errored(self.state_manager, task_id, task=task,
-                                  ttl=self._state_ttl,
-                                  job_retries=current_retries + 1)
+        await update_task_errored(
+            self.state_manager,
+            task_id,
+            task=task,
+            ttl=self._state_ttl,
+            job_retries=current_retries + 1,
+        )
 
         # Publish task data to delay queue
         await channel.publish(
             json.dumps(task._job.data),
             exchange_name=self.MAIN_EXCHANGE,
             routing_key=self.QUEUE_DELAYED,
-            properties={
-                'delivery_mode': 2
-            }
+            properties={"delivery_mode": 2},
         )
         # ACK to main queue so it doesn't timeout
-        await channel.basic_client_ack(
-            delivery_tag=task._job.envelope.delivery_tag)
-        logger.info(f'Task {task_id} will be retried')
+        await channel.basic_client_ack(delivery_tag=task._job.envelope.delivery_tag)
+        logger.info(f"Task {task_id} will be retried")
+
+        self.measure_job_duration(task._job, TaskStatus.ERRORED)
 
     async def _handle_successful(self, task):
-        task_id = task._job.data['task_id']
-        dotted_name = task._job.data['func']
+        task_id = task._job.data["task_id"]
+        dotted_name = task._job.data["func"]
+
         # ACK rabbitmq: will make task disappear from rabbitmq
         await task._job.channel.basic_client_ack(
-            delivery_tag=task._job.envelope.delivery_tag)
+            delivery_tag=task._job.envelope.delivery_tag
+        )
 
         # Update status with result
-        await update_task_finished(self.state_manager, task_id,
-                                   task=task,
-                                   ttl=self._state_ttl,
-                                   result=task.result())
-        logger.info(f'Finished task: {task_id}: {dotted_name}')
+        await update_task_finished(
+            self.state_manager,
+            task_id,
+            task=task,
+            ttl=self._state_ttl,
+            result=task.result(),
+        )
+        logger.info(f"Finished task: {task_id}: {dotted_name}")
+
+        self.measure_job_duration(task._job, TaskStatus.FINISHED)
+
+    @staticmethod
+    def measure_job_duration(job, final_status):
+        labels = {
+            "dotted_name": job.function_name,
+            "final_status": final_status,
+            "container_id": job.data.get("container_id"),
+        }
+        duration = time.time() - job._started
+        metric_measure(amqp_job_duration, duration, labels)
+
+    @staticmethod
+    def measure_running_jobs(currently_running):
+        metric_measure(amqp_running_jobs, currently_running)
 
     def _task_done_callback(self, task):
         # We can't pass coroutines to add_done_callback so we have to
@@ -190,23 +247,24 @@ class Worker:
 
     async def _task_callback(self, task):
         """This is called when a job finishes execution"""
-        task_id = task._job.data['task_id']
-        self._done.append(task)
+        task_id = task._job.data["task_id"]
         self.total_run += 1
 
         try:
             result = task.result()
-            logger.debug(f'Task data: {task._job.data}, result: {result}')
+            logger.debug(f"Task data: {task._job.data}, result: {result}")
         except asyncio.CancelledError:
-            logger.warning(f'Task got cancelled: {task._job.data}', exc_info=True)
+            logger.warning(f"Task got cancelled: {task._job.data}")
             return await self._handle_canceled(task)
         except Exception:
+            logger.exception(f"Unhandled task exception: {task_id}")
             # Error during execution of the task
             #
             # If max retries reached
             existing_data = await self.state_manager.get(task_id)
-            retrials = existing_data.get('job_retries', 0)
-            if retrials >= self.max_task_retries:
+            retrials = existing_data.get("job_retries", 0)
+
+            if self.max_task_retries is not None and retrials >= self.max_task_retries:
                 return await self._handle_max_retries_reached(task)
 
             # Otherwise let task be retried
@@ -214,6 +272,10 @@ class Worker:
         else:
             # If task ran successfully, ACK main queue and finish
             return await self._handle_successful(task)
+        finally:
+            if task in self._running:
+                self._running.remove(task)
+            await self.state_manager.release(task_id)
 
     async def stop(self):
         self.cancel()
@@ -228,9 +290,8 @@ class Worker:
 
         # Declare main exchange
         await channel.exchange_declare(
-            exchange_name=self.MAIN_EXCHANGE,
-            type_name='direct',
-            durable=True)
+            exchange_name=self.MAIN_EXCHANGE, type_name="direct", durable=True
+        )
 
         # Declare errored queue and bind it
         await self.queue_errored(channel, passive=False)
@@ -244,13 +305,13 @@ class Worker:
         await channel.basic_qos(prefetch_count=self._max_running)
 
         # Configure task consume callback
-        await channel.basic_consume(
-            self.handle_queued_job,
-            queue_name=self.QUEUE_MAIN,
-        )
+        await channel.basic_consume(self.handle_queued_job, queue_name=self.QUEUE_MAIN)
 
         # Start task that will update status periodically
-        asyncio.ensure_future(self.update_status())
+        self._status_task = asyncio.ensure_future(self.update_status())
+
+        # Start task that checks connection activity
+        self._activity_task = asyncio.ensure_future(self.check_activity())
 
         logger.warning(f"Subscribed to queue: {self.QUEUE_MAIN}")
 
@@ -262,12 +323,14 @@ class Worker:
         exchange
         """
         resp = await channel.queue_declare(
-            queue_name=self.QUEUE_MAIN, durable=True,
+            queue_name=self.QUEUE_MAIN,
+            durable=True,
             passive=passive,
             arguments={
-                'x-dead-letter-exchange': self.MAIN_EXCHANGE,
-                'x-dead-letter-routing-key': self.QUEUE_ERRORED,
-            })
+                "x-dead-letter-exchange": self.MAIN_EXCHANGE,
+                "x-dead-letter-routing-key": self.QUEUE_ERRORED,
+            },
+        )
         if not passive:
             await channel.queue_bind(
                 exchange_name=self.MAIN_EXCHANGE,
@@ -282,13 +345,15 @@ class Worker:
         to the main task queue.
         """
         resp = await channel.queue_declare(
-            queue_name=self.QUEUE_DELAYED, durable=True,
+            queue_name=self.QUEUE_DELAYED,
+            durable=True,
             passive=passive,
             arguments={
-                'x-dead-letter-exchange': self.MAIN_EXCHANGE,
-                'x-dead-letter-routing-key': self.QUEUE_MAIN,
-                'x-message-ttl': self.TTL_DELAYED,
-            })
+                "x-dead-letter-exchange": self.MAIN_EXCHANGE,
+                "x-dead-letter-routing-key": self.QUEUE_MAIN,
+                "x-message-ttl": self.TTL_DELAYED,
+            },
+        )
         if not passive:
             await channel.queue_bind(
                 exchange_name=self.MAIN_EXCHANGE,
@@ -302,11 +367,11 @@ class Worker:
         limited period of time and then they will be lost.
         """
         resp = await channel.queue_declare(
-            queue_name=self.QUEUE_ERRORED, durable=True,
+            queue_name=self.QUEUE_ERRORED,
+            durable=True,
             passive=passive,
-            arguments={
-                'x-message-ttl': self.TTL_ERRORED,
-            })
+            arguments={"x-message-ttl": self.TTL_ERRORED},
+        )
         if not passive:
             await channel.queue_bind(
                 exchange_name=self.MAIN_EXCHANGE,
@@ -319,8 +384,14 @@ class Worker:
         """
         Cancels the worker (i.e: all its running tasks)
         """
-        for task in self._running:
-            task.cancel()
+        for task in self._running[:]:
+            if not task.done():
+                task.cancel()
+            self._running.remove(task)
+
+        for task in (self._status_task, self._activity_task):
+            if task is not None and not task.done():
+                task.cancel()
 
     async def join(self):
         """
@@ -329,6 +400,44 @@ class Worker:
         while len(self._running) > 0:
             await asyncio.sleep(0.01)
 
+    async def check_activity(self, check_every=30, noop_after=200, kill_after=300):
+        """Makes sure there's always activity in the connection by scheduling
+        NOOP tasks if no activity after more than 30 seconds.
+
+        It will kill the worker if no activity detected in the last 5
+        minutes, which would most likely mean that the AMQP connection
+        got stalled. This assumes deployments to ensure enough
+        replicas for worker instances, and that workers will be
+        restarted in case of being killed.
+
+        """
+        if not self._check_activity:
+            # Nothing to do
+            return
+
+        while True:
+            await asyncio.sleep(check_every)
+
+            if len(self._running) != 0:
+                # Tasks are running, so check again later
+                continue
+
+            # Kill worker if no activity in the last 5 minutes
+            diff = time.time() - self.last_activity
+            if diff > kill_after:
+                logger.error(
+                    f"Exiting worker because no connection activity in {diff} seconds"
+                )
+                os._exit(0)
+
+            # Send NOOP tasks if no activity in the last 30 seconds
+            if diff > noop_after:
+                try:
+                    await _noop()
+                except Exception:
+                    logger.exception("Error scheduling NOOP task")
+                    pass
+
     async def update_status(self):
         """Updates status for running tasks and kills running tasks that have
         been canceled.
@@ -336,26 +445,31 @@ class Worker:
         """
         while True:
             await asyncio.sleep(self.update_status_interval)
+
             for task in self._running:
-                _id = task._job.data['task_id']
+                _id = task._job.data["task_id"]
                 ts = TaskState(_id)
 
-                if task in self._done:
-                    # Clean-up completed running task list and release
-                    # lock in StateManager
-                    self._running.remove(task)
-                    await ts.release()
-
-                else:
-                    # Still working on the job: refresh task lock
-                    await ts.refresh_lock()
+                # Still working on the job: refresh task lock
+                await ts.refresh_lock()
 
             # Cancel local tasks that have been cancelled in global
             # state manager
             async for val in self.state_manager.cancelation_list():
                 for task in self._running:
-                    _id = task._job.data['task_id']
+                    _id = task._job.data["task_id"]
                     if _id == val:
                         logger.warning(f"Canceling task {_id}")
-                        task.cancel()
+                        if not task.done():
+                            task.cancel()
+                        self._running.remove(task)
                         await self._state_manager.clean_canceled(_id)
+
+
+@guillotina_amqp.task
+async def _noop():
+    """
+    Does nothing at all
+    """
+    logger.debug("NOOP task executed")
+    return
