@@ -13,7 +13,7 @@ setup(
     description="Integrate amqp into guillotina",
     long_description=README,
     install_requires=[
-        "guillotina>=5.3.55.dev0,<6",
+        "guillotina>=5.0.0,<6",
         "aioamqp",
         "lru-dict",
         "aioredis",

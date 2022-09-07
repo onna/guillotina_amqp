@@ -209,9 +209,11 @@ class RedisStateManager:
             logger.warning("aioredis not installed")
             self._cache = _EMPTY
             return None
-
         if "redis" in app_settings:
-            self._cache = RetriableRedis((await redis.get_driver()).pool)
+            try:
+                self._cache = RetriableRedis((await redis.get_driver()).pool)
+            except asyncio.CancelledError:
+                raise RuntimeError("redis initiated asyncio.CancelledError from initializer")
             return self._cache
         else:
             self._cache = _EMPTY
@@ -532,6 +534,9 @@ class RetriableRedis(aioredis.Redis):
 def retriable_func(func):
     @backoff.on_exception(backoff.expo, REDIS_RETRIABLE_EXCEPTIONS, max_tries=4)
     async def decorated_func(*args, **kw):
-        return await func(*args, **kw)
+        try:
+            return await func(*args, **kw)
+        except asyncio.CancelledError:
+            raise RuntimeError(f"redis initiated asyncio.CancelledError from {func.__name__}")
 
     return decorated_func
