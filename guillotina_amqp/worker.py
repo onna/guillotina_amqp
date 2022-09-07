@@ -253,10 +253,7 @@ class Worker:
         try:
             result = task.result()
             logger.debug(f"Task data: {task._job.data}, result: {result}")
-        except asyncio.CancelledError as exc:
-            # Differentiate intentionally cancelled errors by the associated message.
-            if 'guillotina_amqp - cancel:' not in str(exc):
-                raise
+        except asyncio.CancelledError:
             logger.warning(f"Task got cancelled: {task._job.data}")
             return await self._handle_canceled(task)
         except Exception:
@@ -387,15 +384,14 @@ class Worker:
         """
         Cancels the worker (i.e: all its running tasks)
         """
-        msg = 'guillotina_amqp - cancel: worker cancelled'
         for task in self._running[:]:
             if not task.done():
-                task.cancel(msg=msg)
+                task.cancel()
             self._running.remove(task)
 
         for task in (self._status_task, self._activity_task):
             if task is not None and not task.done():
-                task.cancel(msg=msg)
+                task.cancel()
 
     async def join(self):
         """
@@ -465,7 +461,7 @@ class Worker:
                     if _id == val:
                         logger.warning(f"Canceling task {_id}")
                         if not task.done():
-                            task.cancel(msg='guillotina_amqp - cancel: task in cancelation list')
+                            task.cancel()
                         self._running.remove(task)
                         await self._state_manager.clean_canceled(_id)
 
