@@ -245,36 +245,36 @@ class Worker:
         # place it inside an ensure_future
         asyncio.ensure_future(self._task_callback(task))
 
+    async def _handle_unexpected_error(self, task, task_id):
+        # If max retries reached
+        existing_data = await self.state_manager.get(task_id)
+        retrials = existing_data.get("job_retries", 0)
+
+        if self.max_task_retries is not None and retrials >= self.max_task_retries:
+            return await self._handle_max_retries_reached(task)
+
+        # Otherwise let task be retried
+        return await self._handle_retry(task, retrials)
+
     async def _task_callback(self, task):
         """This is called when a job finishes execution"""
         task_id = task._job.data["task_id"]
         self.total_run += 1
         try:
-            try:
-                result = task.result()
-                logger.debug(f"Task data: {task._job.data}, result: {result}")
-            except asyncio.CancelledError:
-                ts = TaskState(task_id)
-                if await ts.is_canceled():
-                    logger.warning(f"Task got cancelled: {task._job.data}")
-                    return await self._handle_canceled(task)
-                raise RuntimeError(
-                    "Encountered asyncio.CancelledError without task being "
-                    "marked as such in the state manager."
-                )
+            result = task.result()
+            logger.debug(f"Task data: {task._job.data}, result: {result}")
+        except asyncio.CancelledError:
+            ts = TaskState(task_id)
+            if await ts.is_canceled():
+                logger.warning(f"Task got cancelled: {task._job.data}")
+                return await self._handle_canceled(task)
+            logger.error(
+                "Encountered asyncio.CancelledError without task being "
+                "marked as such in the state manager."
+            )
+            return await self._handle_unexpected_error(task, task_id)
         except Exception:
-            logger.error(f"Unhandled task exception: {task_id}", exc_info=True)
-            # Error during execution of the task
-            #
-            # If max retries reached
-            existing_data = await self.state_manager.get(task_id)
-            retrials = existing_data.get("job_retries", 0)
-
-            if self.max_task_retries is not None and retrials >= self.max_task_retries:
-                return await self._handle_max_retries_reached(task)
-
-            # Otherwise let task be retried
-            return await self._handle_retry(task, retrials)
+            return await self._handle_unexpected_error(task, task_id)
         else:
             # If task ran successfully, ACK main queue and finish
             return await self._handle_successful(task)
