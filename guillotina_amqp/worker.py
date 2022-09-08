@@ -287,7 +287,8 @@ class Worker:
         finally:
             if task in self._running:
                 self._running.remove(task)
-            await self.state_manager.release(task_id)
+            if not self.ignore_lock:
+                await self.state_manager.release(task_id)
 
     async def stop(self):
         self.cancel()
