@@ -62,7 +62,7 @@ class Worker:
     _status_task = None
     _activity_task = None
 
-    def __init__(self, request=None, loop=None, max_size=None, check_activity=True):
+    def __init__(self, request=None, loop=None, max_size=None, check_activity=True, ignore_lock=False):
         self.request = request
         self.loop = loop
         self._running: List[asyncio.Task] = []
@@ -74,6 +74,7 @@ class Worker:
         self._state_manager = None
         self._state_ttl = int(app_settings["amqp"]["state_ttl"])
         self._check_activity = check_activity
+        self._ignore_lock = ignore_lock
 
         # RabbitMQ queue names defined here
         self.MAIN_EXCHANGE = app_settings["amqp"]["exchange"]
@@ -82,6 +83,10 @@ class Worker:
         self.QUEUE_DELAYED = app_settings["amqp"]["queue"] + "-delay"
         self.TTL_ERRORED = app_settings["amqp"].get("errored_ttl_ms", default_errored)
         self.TTL_DELAYED = app_settings["amqp"].get("delayed_ttl_ms", default_delayed)
+
+    @property
+    def ignore_lock(self):
+        return self._ignore_lock
 
     @property
     def state_manager(self) -> IStateManagerUtility:
@@ -136,7 +141,7 @@ class Worker:
                 await channel.basic_client_ack(delivery_tag=envelope.delivery_tag)
             return
 
-        if not await ts.acquire():
+        if not self.ignore_lock and not await ts.acquire():
             record_op_metric(job.function_name, "alreadyrunning")
             logger.warning(f"Task {_id} is already running in another worker")
             with watch_amqp("ack"):
@@ -453,12 +458,13 @@ class Worker:
         while True:
             await asyncio.sleep(self.update_status_interval)
 
-            for task in self._running:
-                _id = task._job.data["task_id"]
-                ts = TaskState(_id)
+            if not self.ignore_lock:
+                for task in self._running:
+                    _id = task._job.data["task_id"]
+                    ts = TaskState(_id)
 
-                # Still working on the job: refresh task lock
-                await ts.refresh_lock()
+                    # Still working on the job: refresh task lock
+                    await ts.refresh_lock()
 
             # Cancel local tasks that have been cancelled in global
             # state manager

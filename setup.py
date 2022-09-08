@@ -9,14 +9,14 @@ except IOError:
 
 setup(
     name="guillotina_amqp",
-    version="5.0.26",
+    version="5.0.27",
     description="Integrate amqp into guillotina",
     long_description=README,
     install_requires=[
         "guillotina>=5.0.0,<6",
         "aioamqp",
         "lru-dict",
-        "aioredis",
+        "aioredis<2.0.0",
         "backoff",
         "typing_extensions",
     ],

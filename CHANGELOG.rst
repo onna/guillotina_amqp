@@ -1,3 +1,8 @@
+5.0.27 (2022-09-08)
+-------------------
+- Add --ignore-lock option to skip aioredis based task locking
+
+
 5.0.26 (2021-05-26)
 -------------------
 
