@@ -114,6 +114,19 @@ class Worker:
         # Set status to scheduled
         task_id = data["task_id"]
         dotted_name = data["func"]
+        ts = TaskState(task_id)
+
+        # Already done?
+        status = None
+        try:
+            status = await ts.get_status()
+        except TaskNotFoundException:
+            pass
+        if status == "finished":
+            logger.warning(f"Task {task_id} has already completed, skipping...")
+            with watch_amqp("ack"):
+                await channel.basic_client_ack(delivery_tag=envelope.delivery_tag)
+            return
 
         await update_task_scheduled(self.state_manager, task_id, eventlog=[])
 
@@ -130,7 +143,6 @@ class Worker:
         job = Job(self.request, data, channel, envelope)
         # Get the redis lock on the task so no other worker takes it
         _id = job.data["task_id"]
-        ts = TaskState(_id)
 
         # Cancelation
         if await ts.is_canceled():
@@ -154,18 +166,6 @@ class Worker:
                     routing_key=self.QUEUE_DELAYED,
                     properties={"delivery_mode": 2},
                 )
-            with watch_amqp("ack"):
-                await channel.basic_client_ack(delivery_tag=envelope.delivery_tag)
-            return
-
-        # Already done?
-        status = None
-        try:
-            status = await ts.get_status()
-        except TaskNotFoundException:
-            pass
-        if status == "finished":
-            logger.warning(f"Task {_id} has already completed, skipping")
             with watch_amqp("ack"):
                 await channel.basic_client_ack(delivery_tag=envelope.delivery_tag)
             return
