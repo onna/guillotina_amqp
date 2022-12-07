@@ -1,3 +1,8 @@
+5.0.28 (2022-12-07)
+-------------------
+- Requeue when locked via delay queue, skip if task status is "finished"
+
+
 5.0.27 (2022-09-08)
 -------------------
 - Add --ignore-lock option to skip aioredis based task locking

@@ -144,6 +144,28 @@ class Worker:
         if not self.ignore_lock and not await ts.acquire():
             record_op_metric(job.function_name, "alreadyrunning")
             logger.warning(f"Task {_id} is already running in another worker")
+
+            # Instead of only ack'ing the message here, let's send it back through the delay
+            # queue, and simply ignore it if it's picked up again and finished.
+            with watch_amqp("publish"):
+                await channel.publish(
+                    json.dumps(data),
+                    exchange_name=self.MAIN_EXCHANGE,
+                    routing_key=self.QUEUE_DELAYED,
+                    properties={"delivery_mode": 2},
+                )
+            with watch_amqp("ack"):
+                await channel.basic_client_ack(delivery_tag=envelope.delivery_tag)
+            return
+
+        # Already done?
+        status = None
+        try:
+            status = await ts.get_status()
+        except TaskNotFoundException:
+            pass
+        if status == "finished":
+            logger.warning(f"Task {_id} has already completed, skipping")
             with watch_amqp("ack"):
                 await channel.basic_client_ack(delivery_tag=envelope.delivery_tag)
             return
