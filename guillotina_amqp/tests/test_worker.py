@@ -74,3 +74,4 @@ async def test_worker_acks_already_acquired_tasks(dummy_request, metrics_registr
         )
         == 1.0
     )
+

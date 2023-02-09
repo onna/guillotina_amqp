@@ -305,6 +305,36 @@ async def test_worker_sends_noop_tasks_after_inactivity(
 
     task_vars.request.set(None)
 
+async def test_delay_task_exception_should_be_published_to_delay_queue(
+    dummy_request, rabbitmq_container, amqp_worker, amqp_channel
+):
+    task_vars.request.set(dummy_request)
+    ts = await _test_delay_queue()
+    # wait for it to finish
+    await ts.join(0.1)
+    amqp_worker.max_task_retries = 5
+    assert amqp_worker.total_run == 1
+    await amqp_worker.join()
+    state = await ts.get_state()
+    assert state["status"] == TaskStatus.SLEEPING
+    assert state["job_retries"] == 0
+
+    task_id = state["job_data"]["task_id"]
+
+    # Check that the job has been moved to the delay queue and
+    # verify the task id
+
+    delayed = await amqp_worker.queue_delayed(amqp_channel)
+    assert delayed["message_count"] == 1
+
+    async def callback(channel, body, envelope, properties):
+        decoded = json.loads(body)
+        assert decoded["task_id"] == task_id
+
+    await amqp_channel.basic_consume(callback, queue_name=delayed["queue"])
+    task_vars.request.set(None)
+    
+
 
 def test_job_function_name():
     data = {"func": get_dotted_name(_run_object_task), "args": ["my.func.foobar"]}

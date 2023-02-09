@@ -1,4 +1,5 @@
 from guillotina_amqp.decorators import task
+from guillotina_amqp.exceptions import DelayTaskException
 from guillotina_amqp.interfaces import MessageType
 
 import asyncio
@@ -42,3 +43,6 @@ async def _test_failing_func():
 @task
 async def _decorator_test_func(one, two):
     return one + two
+
+async def _test_delay_queue():
+    raise DelayTaskException

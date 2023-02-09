@@ -1,3 +1,4 @@
+from build.lib.guillotina_amqp.state import update_task_status
 from .metrics import watch_amqp
 from .exceptions import DelayTaskException
 from guillotina import app_settings
@@ -246,6 +247,30 @@ class Worker:
 
         record_op_metric(task._job.function_name, "retried")
 
+    async def _handle_send_to_delay_queue(self, task, task_id):
+        channel = task._job.channel
+        await update_task_status(
+            self.state_manager,
+            task_id,
+            TaskStatus.SLEEPING,
+            task=task,
+            ttl=self._state_ttl,
+        )
+        # Publish task data to delay queue
+        with watch_amqp("publish"):
+            await channel.publish(
+                json.dumps(task._job.data),
+                exchange_name=self.MAIN_EXCHANGE,
+                routing_key=self.QUEUE_DELAYED,
+                properties={"delivery_mode": 2},
+            )
+        # ACK to main queue so it doesn't timeout
+        with watch_amqp("ack"):
+            await channel.basic_client_ack(delivery_tag=task._job.envelope.delivery_tag)
+        logger.info(f"Task {task_id} sent to delay queue")
+
+        record_op_metric(task._job.function_name, "sleep")
+
     async def _handle_successful(self, task):
         task_id = task._job.data["task_id"]
         dotted_name = task._job.data["func"]
@@ -283,24 +308,6 @@ class Worker:
 
         # Otherwise let task be retried
         return await self._handle_retry(task, retrials)
-
-    async def _handle_send_to_delay_queue(self, task, task_id):
-        channel = task._job.channel
-        # Publish task data to delay queue
-        with watch_amqp("publish"):
-            await channel.publish(
-                json.dumps(task._job.data),
-                exchange_name=self.MAIN_EXCHANGE,
-                routing_key=self.QUEUE_DELAYED,
-                properties={"delivery_mode": 2},
-            )
-        # ACK to main queue so it doesn't timeout
-        with watch_amqp("ack"):
-            await channel.basic_client_ack(delivery_tag=task._job.envelope.delivery_tag)
-        logger.info(f"Task {task_id} sent to delay queue")
-
-        record_op_metric(task._job.function_name, "sleep")
-
 
     async def _task_callback(self, task):
         """This is called when a job finishes execution"""

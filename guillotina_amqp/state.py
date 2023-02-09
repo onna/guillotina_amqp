@@ -64,6 +64,7 @@ class TaskStatus:
     RUNNING = "running"
     FINISHED = "finished"
     ERRORED = "errored"
+    SLEEPING = "sleeping"
 
 
 @configure.utility(provides=IStateManagerUtility, name="memory")
