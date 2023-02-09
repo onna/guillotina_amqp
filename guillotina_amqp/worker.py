@@ -2,6 +2,7 @@ from .metrics import watch_amqp
 from guillotina import app_settings
 from guillotina import glogging
 from guillotina_amqp import amqp
+from guillotina_amqp.exceptions import TaskNotFoundException
 from guillotina_amqp.interfaces import IStateManagerUtility
 from guillotina_amqp.job import Job
 from guillotina_amqp.state import get_state_manager
@@ -32,7 +33,6 @@ try:
     def record_op_metric(type: str, status: str) -> None:
         OPS.labels(type=type, status=status).inc()
 
-
 except ImportError:
 
     def record_op_metric(type: str, status: str) -> None:
@@ -62,7 +62,14 @@ class Worker:
     _status_task = None
     _activity_task = None
 
-    def __init__(self, request=None, loop=None, max_size=None, check_activity=True, ignore_lock=False):
+    def __init__(
+        self,
+        request=None,
+        loop=None,
+        max_size=None,
+        check_activity=True,
+        ignore_lock=False,
+    ):
         self.request = request
         self.loop = loop
         self._running: List[asyncio.Task] = []
@@ -197,6 +204,7 @@ class Worker:
         )
 
         record_op_metric(task._job.function_name, TaskStatus.CANCELED)
+        await self._state_manager.clean_canceled(task_id)
 
     async def _handle_max_retries_reached(self, task):
         task_id = task._job.data["task_id"]
@@ -291,8 +299,7 @@ class Worker:
             result = task.result()
             logger.debug(f"Task data: {task._job.data}, result: {result}")
         except asyncio.CancelledError:
-            ts = TaskState(task_id)
-            if await ts.is_canceled():
+            if await self._state_manager.is_canceled(task_id):
                 logger.warning(f"Task got cancelled: {task._job.data}")
                 return await self._handle_canceled(task)
             logger.error(
@@ -301,7 +308,7 @@ class Worker:
             )
             return await self._handle_unexpected_error(task, task_id)
         except Exception:
-            logger.exception(f"Unhandled task exception: {task_id}")
+            logger.error(f"Unhandled task exception: {task_id}")
             return await self._handle_unexpected_error(task, task_id)
         else:
             # If task ran successfully, ACK main queue and finish
@@ -485,7 +492,6 @@ class Worker:
                 for task in self._running:
                     _id = task._job.data["task_id"]
                     ts = TaskState(_id)
-
                     # Still working on the job: refresh task lock
                     await ts.refresh_lock()
 
@@ -498,7 +504,6 @@ class Worker:
                     if not task.done():
                         task.cancel()
                     self._running.remove(task)
-                    await self._state_manager.clean_canceled(_id)
 
 
 @guillotina_amqp.task

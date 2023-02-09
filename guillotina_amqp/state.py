@@ -48,7 +48,6 @@ try:
                 labels={"type": operation},
             )
 
-
 except ImportError:
     watch_redis = metrics.dummy_watch  # type: ignore
 
@@ -213,7 +212,9 @@ class RedisStateManager:
             try:
                 self._cache = RetriableRedis((await redis.get_driver()).pool)
             except asyncio.CancelledError:
-                raise RuntimeError("redis initiated asyncio.CancelledError from initializer")
+                raise RuntimeError(
+                    "redis initiated asyncio.CancelledError from initializer"
+                )
             return self._cache
         else:
             self._cache = _EMPTY
@@ -348,6 +349,7 @@ class TaskState:
         while True:
             data = await util.get(self.task_id)
             if not data:
+                logger.info(f"Attempted join on missing task: {self.task_id}")
                 raise TaskNotFoundException(self.task_id)
             if data.get("status") in (
                 TaskStatus.FINISHED,
@@ -392,10 +394,13 @@ class TaskState:
         util = get_state_manager()
         if await util.is_canceled(self.task_id):
             # Already canceled
+            logger.info(f"Task {self.task_id} is already cancelled")
             return True
         if not await util.exists(self.task_id):
+            logger.warning(f"Task {self.task_id} not found")
             raise TaskNotFoundException
         # Cancel it
+        logger.info(f"Canceling task: {self.task_id}")
         return await util.cancel(self.task_id)
 
     async def acquire(self, ttl=DEFAULT_LOCK_TTL_S) -> bool:
@@ -537,6 +542,8 @@ def retriable_func(func):
         try:
             return await func(*args, **kw)
         except asyncio.CancelledError:
-            raise RuntimeError(f"redis initiated asyncio.CancelledError from {func.__name__}")
+            raise RuntimeError(
+                f"redis initiated asyncio.CancelledError from {func.__name__}"
+            )
 
     return decorated_func

@@ -41,9 +41,7 @@ logger = glogging.getLogger("guillotina_amqp.job")
 
 
 def login_user(request, user_data):
-    """Logs user in to guillotina so the job has the correct access
-
-    """
+    """Logs user in to guillotina so the job has the correct access"""
     if "id" in user_data:
         user = GuillotinaUser(
             user_id=user_data["id"],
@@ -205,8 +203,7 @@ class Job:
 
     @property
     def function_name(self):
-        """
-        """
+        """ """
         try:
             func = self.get_function_to_run()
         except (ModuleNotFoundError, ImportError):
