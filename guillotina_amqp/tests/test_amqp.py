@@ -7,6 +7,7 @@ from guillotina_amqp.tests.utils import _decorator_test_func
 from guillotina_amqp.tests.utils import _test_asyncgen
 from guillotina_amqp.tests.utils import _test_asyncgen_doubley
 from guillotina_amqp.tests.utils import _test_asyncgen_invalid
+from guillotina_amqp.tests.utils import _test_delay_queue
 from guillotina_amqp.tests.utils import _test_failing_func
 from guillotina_amqp.tests.utils import _test_func
 from guillotina_amqp.tests.utils import _test_long_func

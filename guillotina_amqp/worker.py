@@ -1,6 +1,7 @@
 from build.lib.guillotina_amqp.state import update_task_status
 from .metrics import watch_amqp
 from .exceptions import DelayTaskException
+from .exceptions import TaskNotFoundException
 from guillotina import app_settings
 from guillotina import glogging
 from guillotina_amqp import amqp
