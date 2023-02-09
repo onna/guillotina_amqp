@@ -308,7 +308,7 @@ class Worker:
             )
             return await self._handle_unexpected_error(task, task_id)
         except Exception:
-            logger.exception(f"Unhandled task exception: {task_id}")
+            logger.error(f"Unhandled task exception: {task_id}")
             return await self._handle_unexpected_error(task, task_id)
         else:
             # If task ran successfully, ACK main queue and finish
