@@ -1,4 +1,5 @@
 from .metrics import watch_amqp
+from .exceptions import DelayTaskException
 from guillotina import app_settings
 from guillotina import glogging
 from guillotina_amqp import amqp
@@ -283,6 +284,24 @@ class Worker:
         # Otherwise let task be retried
         return await self._handle_retry(task, retrials)
 
+    async def _handle_send_to_delay_queue(self, task, task_id):
+        channel = task._job.channel
+        # Publish task data to delay queue
+        with watch_amqp("publish"):
+            await channel.publish(
+                json.dumps(task._job.data),
+                exchange_name=self.MAIN_EXCHANGE,
+                routing_key=self.QUEUE_DELAYED,
+                properties={"delivery_mode": 2},
+            )
+        # ACK to main queue so it doesn't timeout
+        with watch_amqp("ack"):
+            await channel.basic_client_ack(delivery_tag=task._job.envelope.delivery_tag)
+        logger.info(f"Task {task_id} sent to delay queue")
+
+        record_op_metric(task._job.function_name, "sleep")
+
+
     async def _task_callback(self, task):
         """This is called when a job finishes execution"""
         task_id = task._job.data["task_id"]
@@ -300,6 +319,9 @@ class Worker:
                 "marked as such in the state manager."
             )
             return await self._handle_unexpected_error(task, task_id)
+        except DelayTaskException:
+            logger.warning(f"Sending task {task_id} to the delay queue")
+            return await self._handle_send_to_delay_queue(task, task_id)
         except Exception:
             logger.exception(f"Unhandled task exception: {task_id}")
             return await self._handle_unexpected_error(task, task_id)
