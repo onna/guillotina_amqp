@@ -204,6 +204,7 @@ class Worker:
         )
 
         record_op_metric(task._job.function_name, TaskStatus.CANCELED)
+        await self._state_manager.clean_canceled(task_id)
 
     async def _handle_max_retries_reached(self, task):
         task_id = task._job.data["task_id"]
@@ -299,7 +300,7 @@ class Worker:
             logger.debug(f"Task data: {task._job.data}, result: {result}")
         except asyncio.CancelledError:
             ts = TaskState(task_id)
-            if await ts.is_canceled():
+            if await self._state_manager.is_canceled(task_id):
                 logger.warning(f"Task got cancelled: {task._job.data}")
                 return await self._handle_canceled(task)
             logger.error(
@@ -492,7 +493,6 @@ class Worker:
                 for task in self._running:
                     _id = task._job.data["task_id"]
                     ts = TaskState(_id)
-
                     # Still working on the job: refresh task lock
                     await ts.refresh_lock()
 
@@ -505,7 +505,6 @@ class Worker:
                     if not task.done():
                         task.cancel()
                     self._running.remove(task)
-                    await self._state_manager.clean_canceled(_id)
 
 
 @guillotina_amqp.task

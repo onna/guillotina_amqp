@@ -149,7 +149,6 @@ async def test_cancels_long_running_task(
 
     # Check that the it was indeed cancelled
     state = await ts.get_state()
-    assert await ts.is_canceled()
     assert state["status"] == TaskStatus.CANCELED
     await asyncio.sleep(0.1)  # prevent possible race condition here
     assert amqp_worker.total_run == 1
