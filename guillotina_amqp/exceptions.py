@@ -25,5 +25,6 @@ class ObjectNotFoundException(Exception):
 class AMQPConfigurationNotFoundError(Exception):
     pass
 
+
 class DelayTaskException(Exception):
     pass

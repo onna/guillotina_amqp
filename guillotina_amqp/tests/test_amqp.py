@@ -305,6 +305,7 @@ async def test_worker_sends_noop_tasks_after_inactivity(
 
     task_vars.request.set(None)
 
+
 async def test_delay_task_exception_should_be_published_to_delay_queue(
     dummy_request, rabbitmq_container, amqp_worker, amqp_channel
 ):
@@ -333,7 +334,6 @@ async def test_delay_task_exception_should_be_published_to_delay_queue(
 
     await amqp_channel.basic_consume(callback, queue_name=delayed["queue"])
     task_vars.request.set(None)
-    
 
 
 def test_job_function_name():
