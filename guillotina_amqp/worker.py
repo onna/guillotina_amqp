@@ -33,7 +33,6 @@ try:
     def record_op_metric(type: str, status: str) -> None:
         OPS.labels(type=type, status=status).inc()
 
-
 except ImportError:
 
     def record_op_metric(type: str, status: str) -> None:
@@ -63,7 +62,14 @@ class Worker:
     _status_task = None
     _activity_task = None
 
-    def __init__(self, request=None, loop=None, max_size=None, check_activity=True, ignore_lock=False):
+    def __init__(
+        self,
+        request=None,
+        loop=None,
+        max_size=None,
+        check_activity=True,
+        ignore_lock=False,
+    ):
         self.request = request
         self.loop = loop
         self._running: List[asyncio.Task] = []

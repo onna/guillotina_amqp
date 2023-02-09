@@ -48,7 +48,6 @@ try:
                 labels={"type": operation},
             )
 
-
 except ImportError:
     watch_redis = metrics.dummy_watch  # type: ignore
 
@@ -213,7 +212,9 @@ class RedisStateManager:
             try:
                 self._cache = RetriableRedis((await redis.get_driver()).pool)
             except asyncio.CancelledError:
-                raise RuntimeError("redis initiated asyncio.CancelledError from initializer")
+                raise RuntimeError(
+                    "redis initiated asyncio.CancelledError from initializer"
+                )
             return self._cache
         else:
             self._cache = _EMPTY
@@ -537,6 +538,8 @@ def retriable_func(func):
         try:
             return await func(*args, **kw)
         except asyncio.CancelledError:
-            raise RuntimeError(f"redis initiated asyncio.CancelledError from {func.__name__}")
+            raise RuntimeError(
+                f"redis initiated asyncio.CancelledError from {func.__name__}"
+            )
 
     return decorated_func

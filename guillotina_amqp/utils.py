@@ -31,9 +31,7 @@ logger = glogging.getLogger("guillotina_amqp.utils")
 
 
 async def cancel_task(task_id):
-    """It cancels a task by id. Returns wether it could be cancelled.
-
-    """
+    """It cancels a task by id. Returns wether it could be cancelled."""
     task = TaskState(task_id)
     success = await task.cancel()
     return success
@@ -180,7 +178,7 @@ async def add_object_task(
 
 
 class TimeoutLock(object):
-    """Implements a Lock that can be acquired for """
+    """Implements a Lock that can be acquired for"""
 
     def __init__(self, worker_id):
         self._lock = asyncio.Lock()
