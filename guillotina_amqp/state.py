@@ -349,6 +349,7 @@ class TaskState:
         while True:
             data = await util.get(self.task_id)
             if not data:
+                logger.info(f"Attempted join on missing task: {self.task_id}")
                 raise TaskNotFoundException(self.task_id)
             if data.get("status") in (
                 TaskStatus.FINISHED,
@@ -393,10 +394,10 @@ class TaskState:
         util = get_state_manager()
         if await util.is_canceled(self.task_id):
             # Already canceled
-            logger.info("Task {self.task_id} is already cancelled")
+            logger.info(f"Task {self.task_id} is already cancelled")
             return True
         if not await util.exists(self.task_id):
-            logger.warning("Task {self.task_id} not found")
+            logger.warning(f"Task {self.task_id} not found")
             raise TaskNotFoundException
         # Cancel it
         logger.info(f"Canceling task: {self.task_id}")
