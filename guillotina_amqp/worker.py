@@ -299,7 +299,6 @@ class Worker:
             result = task.result()
             logger.debug(f"Task data: {task._job.data}, result: {result}")
         except asyncio.CancelledError:
-            ts = TaskState(task_id)
             if await self._state_manager.is_canceled(task_id):
                 logger.warning(f"Task got cancelled: {task._job.data}")
                 return await self._handle_canceled(task)
