@@ -395,6 +395,7 @@ class TaskState:
             # Already canceled
             return True
         if not await util.exists(self.task_id):
+            logger.warning("Task {self.task_id} not found")
             raise TaskNotFoundException
         # Cancel it
         return await util.cancel(self.task_id)
