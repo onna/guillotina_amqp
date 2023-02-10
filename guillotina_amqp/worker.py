@@ -1,6 +1,5 @@
 from .exceptions import DelayTaskException
 from .metrics import watch_amqp
-from build.lib.guillotina_amqp.state import update_task_status
 from guillotina import app_settings
 from guillotina import glogging
 from guillotina_amqp import amqp
@@ -8,6 +7,7 @@ from guillotina_amqp.exceptions import TaskNotFoundException
 from guillotina_amqp.interfaces import IStateManagerUtility
 from guillotina_amqp.job import Job
 from guillotina_amqp.state import get_state_manager
+from guillotina_amqp.state import update_task_status
 from guillotina_amqp.state import TaskState
 from guillotina_amqp.state import TaskStatus
 from guillotina_amqp.state import update_task_canceled
