@@ -71,7 +71,7 @@ class WorkerCommand(ServerCommand):
         parser.add_argument(
             "--ignore-lock",
             help="Do not attempt process locking via redis",
-            action="store_true"
+            action="store_true",
         )
         parser.add_argument(
             "--metrics-server",
@@ -108,7 +108,12 @@ class WorkerCommand(ServerCommand):
         loop = loop or self.get_loop()
 
         # Run the actual worker in the same loop
-        worker = Worker(self.request, loop, arguments.max_running_tasks, ignore_lock=arguments.ignore_lock)
+        worker = Worker(
+            self.request,
+            loop,
+            arguments.max_running_tasks,
+            ignore_lock=arguments.ignore_lock,
+        )
         await worker.start()
 
         timeout = arguments.auto_kill_timeout

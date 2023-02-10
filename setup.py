@@ -31,7 +31,7 @@ setup(
         "test": [
             "asynctest==0.13.0",
             "pytest>=4.6.0,<6.1.0",
-            "docker",
+            "docker>=5.0.0,<6.0.0",
             "psycopg2-binary",
             "pytest-asyncio==0.10.0",
             "pytest-cov>=2.6.1,<=2.9.0",

@@ -72,7 +72,10 @@ try:
                 error_mappings={"notfound": ObjectNotFoundException},
             )
 
-    watch_job_request = metrics.watch(counter=JOB_REQUEST, histogram=JOB_REQUEST_TIME,)
+    watch_job_request = metrics.watch(
+        counter=JOB_REQUEST,
+        histogram=JOB_REQUEST_TIME,
+    )
 
     class watch_job_commit(metrics.watch):
         def __init__(self, operation: str):
@@ -81,7 +84,6 @@ try:
                 histogram=JOB_COMMIT_TIME,
                 labels={"type": operation},
             )
-
 
 except ImportError:
     watch_job = watch_amqp = watch_job_request = watch_job_commit = metrics.dummy_watch  # type: ignore
