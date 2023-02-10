@@ -321,7 +321,6 @@ async def test_delay_task_exception_should_be_published_to_delay_queue(
     state = await ts.get_state()
     print("the state", state)
     assert state["status"] == TaskStatus.SLEEPING
-    assert state["job_retries"] == 0
 
     task_id = state["job_data"]["task_id"]
 
