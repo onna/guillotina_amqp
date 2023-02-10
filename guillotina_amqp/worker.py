@@ -7,13 +7,13 @@ from guillotina_amqp.exceptions import TaskNotFoundException
 from guillotina_amqp.interfaces import IStateManagerUtility
 from guillotina_amqp.job import Job
 from guillotina_amqp.state import get_state_manager
-from guillotina_amqp.state import update_task_status
 from guillotina_amqp.state import TaskState
 from guillotina_amqp.state import TaskStatus
 from guillotina_amqp.state import update_task_canceled
 from guillotina_amqp.state import update_task_errored
 from guillotina_amqp.state import update_task_finished
 from guillotina_amqp.state import update_task_scheduled
+from guillotina_amqp.state import update_task_status
 from typing import List
 
 import asyncio
