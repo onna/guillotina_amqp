@@ -312,6 +312,7 @@ async def test_delay_task_exception_should_be_published_to_delay_queue(
 ):
     task_vars.request.set(dummy_request)
     ts = await _test_delay_queue()
+    print("what is this: ", ts)
     # wait for it to finish
     await ts.join(0.1)
     amqp_worker.max_task_retries = 5
@@ -329,6 +330,7 @@ async def test_delay_task_exception_should_be_published_to_delay_queue(
     delayed = await amqp_worker.queue_delayed(amqp_channel)
     assert delayed["message_count"] == 1
 
+    print("we have been delayed: ", delayed["message_count"])
     async def callback(channel, body, envelope, properties):
         decoded = json.loads(body)
         assert decoded["task_id"] == task_id
