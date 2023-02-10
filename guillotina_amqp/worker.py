@@ -1,5 +1,4 @@
 from .exceptions import DelayTaskException
-from .exceptions import TaskNotFoundException
 from .metrics import watch_amqp
 from build.lib.guillotina_amqp.state import update_task_status
 from guillotina import app_settings
