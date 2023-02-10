@@ -44,6 +44,6 @@ async def _test_failing_func():
 async def _decorator_test_func(one, two):
     return one + two
 
-
+@task
 async def _test_delay_queue():
     raise DelayTaskException
