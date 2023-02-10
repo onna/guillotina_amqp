@@ -356,6 +356,7 @@ class TaskState:
                 TaskStatus.FINISHED,
                 TaskStatus.ERRORED,
                 TaskStatus.CANCELED,
+                TaskStatus.SLEEPING,
             ):
                 return data
             await asyncio.sleep(wait)
