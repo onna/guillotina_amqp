@@ -38,7 +38,7 @@ jobs:
           pip install -e .[test]
 
           # Run tests
-          pytest --tb=native -v guillotina_amqp --cov=guillotina_amqp --cov-report xml --cov-append guillotina_amqp
+          pytest --tb=native -v -s guillotina_amqp --cov=guillotina_amqp --cov-report xml --cov-append guillotina_amqp
 
           # install codecov library
           pip install codecov
