@@ -319,7 +319,7 @@ async def test_delay_task_exception_should_be_published_to_delay_queue(
     assert amqp_worker.total_run == 1
     await amqp_worker.join()
     state = await ts.get_state()
-    print("the state")
+    print("the state", state)
     assert state["status"] == TaskStatus.SLEEPING
     assert state["job_retries"] == 0
 
