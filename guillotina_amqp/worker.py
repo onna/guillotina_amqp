@@ -256,7 +256,6 @@ class Worker:
         record_op_metric(task._job.function_name, "retried")
 
     async def _handle_send_to_delay_queue(self, task, task_id):
-        print("starting handle for delay queue")
         channel = task._job.channel
         await update_task_status(
             self.state_manager,
@@ -273,7 +272,6 @@ class Worker:
                 routing_key=self.QUEUE_DELAYED,
                 properties={"delivery_mode": 2},
             )
-        print("we are now going to ack")
         # ACK to main queue so it doesn't timeout
         with watch_amqp("ack"):
             await channel.basic_client_ack(delivery_tag=task._job.envelope.delivery_tag)

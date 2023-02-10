@@ -312,14 +312,12 @@ async def test_delay_task_exception_should_be_published_to_delay_queue(
 ):
     task_vars.request.set(dummy_request)
     ts = await _test_delay_queue()
-    print("what is this: ", ts)
     # wait for it to finish
     await ts.join(0.1)
     amqp_worker.max_task_retries = 5
     assert amqp_worker.total_run == 1
     await amqp_worker.join()
     state = await ts.get_state()
-    print("the state", state)
     assert state["status"] == TaskStatus.SLEEPING
 
     task_id = state["job_data"]["task_id"]
@@ -330,8 +328,6 @@ async def test_delay_task_exception_should_be_published_to_delay_queue(
     delayed = await amqp_worker.queue_delayed(amqp_channel)
     # we want greater than 2 since 2 other delay queue messages are there
     assert delayed["message_count"] > 2
-
-    print("we have been delayed: ", delayed["message_count"])
 
     async def callback(channel, body, envelope, properties):
         decoded = json.loads(body)

@@ -47,5 +47,4 @@ async def _decorator_test_func(one, two):
 
 @task
 async def _test_delay_queue():
-    print("we are running the delay task")
     raise DelayTaskException
