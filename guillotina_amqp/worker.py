@@ -2,8 +2,8 @@ from .metrics import watch_amqp
 from guillotina import app_settings
 from guillotina import glogging
 from guillotina_amqp import amqp
-from guillotina_amqp.exceptions import TaskNotFoundException
 from guillotina_amqp.exceptions import DelayTaskException
+from guillotina_amqp.exceptions import TaskNotFoundException
 from guillotina_amqp.interfaces import IStateManagerUtility
 from guillotina_amqp.job import Job
 from guillotina_amqp.state import get_state_manager
