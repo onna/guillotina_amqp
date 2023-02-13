@@ -1,4 +1,4 @@
-from .exceptions import TaskNotFoundException
+from guillotina_amqp.exceptions import TaskNotFoundException
 from .state import get_state_manager
 from .state import TaskState
 from .utils import get_task_id_prefix
