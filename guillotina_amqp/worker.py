@@ -334,7 +334,6 @@ class Worker:
             )
             return await self._handle_unexpected_error(task, task_id)
         except DelayTaskException:
-            print("sending task to the delay queue")
             logger.warning(f"Sending task {task_id} to the delay queue")
             return await self._handle_send_to_delay_queue(task, task_id)
         except Exception:
