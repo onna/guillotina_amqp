@@ -1,4 +1,3 @@
-from .exceptions import TaskNotFoundException
 from .state import get_state_manager
 from .state import TaskState
 from .utils import get_task_id_prefix
@@ -6,6 +5,7 @@ from guillotina import configure
 from guillotina.interfaces import IContainer
 from guillotina.response import HTTPNotFound
 from guillotina.utils import get_security_policy
+from guillotina_amqp.exceptions import TaskNotFoundException
 
 
 def can_debug_amqp(context: IContainer) -> bool:

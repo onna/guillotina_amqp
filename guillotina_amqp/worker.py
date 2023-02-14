@@ -2,6 +2,7 @@ from .metrics import watch_amqp
 from guillotina import app_settings
 from guillotina import glogging
 from guillotina_amqp import amqp
+from guillotina_amqp.exceptions import DelayTaskException
 from guillotina_amqp.exceptions import TaskNotFoundException
 from guillotina_amqp.interfaces import IStateManagerUtility
 from guillotina_amqp.job import Job
@@ -12,6 +13,7 @@ from guillotina_amqp.state import update_task_canceled
 from guillotina_amqp.state import update_task_errored
 from guillotina_amqp.state import update_task_finished
 from guillotina_amqp.state import update_task_scheduled
+from guillotina_amqp.state import update_task_status
 from typing import List
 
 import asyncio
@@ -253,6 +255,30 @@ class Worker:
 
         record_op_metric(task._job.function_name, "retried")
 
+    async def _handle_send_to_delay_queue(self, task, task_id):
+        channel = task._job.channel
+        await update_task_status(
+            self.state_manager,
+            task_id,
+            TaskStatus.SLEEPING,
+            task=task,
+            ttl=self._state_ttl,
+        )
+        # Publish task data to delay queue
+        with watch_amqp("publish"):
+            await channel.publish(
+                json.dumps(task._job.data),
+                exchange_name=self.MAIN_EXCHANGE,
+                routing_key=self.QUEUE_DELAYED,
+                properties={"delivery_mode": 2},
+            )
+        # ACK to main queue so it doesn't timeout
+        with watch_amqp("ack"):
+            await channel.basic_client_ack(delivery_tag=task._job.envelope.delivery_tag)
+        logger.info(f"Task {task_id} sent to delay queue")
+
+        record_op_metric(task._job.function_name, "sleep")
+
     async def _handle_successful(self, task):
         task_id = task._job.data["task_id"]
         dotted_name = task._job.data["func"]
@@ -307,6 +333,9 @@ class Worker:
                 "marked as such in the state manager."
             )
             return await self._handle_unexpected_error(task, task_id)
+        except DelayTaskException:
+            logger.warning(f"Sending task {task_id} to the delay queue")
+            return await self._handle_send_to_delay_queue(task, task_id)
         except Exception:
             logger.error(f"Unhandled task exception: {task_id}")
             return await self._handle_unexpected_error(task, task_id)

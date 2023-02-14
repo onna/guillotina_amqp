@@ -7,6 +7,7 @@ from guillotina_amqp.tests.utils import _decorator_test_func
 from guillotina_amqp.tests.utils import _test_asyncgen
 from guillotina_amqp.tests.utils import _test_asyncgen_doubley
 from guillotina_amqp.tests.utils import _test_asyncgen_invalid
+from guillotina_amqp.tests.utils import _test_delay_queue
 from guillotina_amqp.tests.utils import _test_failing_func
 from guillotina_amqp.tests.utils import _test_func
 from guillotina_amqp.tests.utils import _test_long_func
@@ -303,6 +304,36 @@ async def test_worker_sends_noop_tasks_after_inactivity(
     # which means NOOP task was received and executed
     assert amqp_worker.last_activity > initial_last_activity
 
+    task_vars.request.set(None)
+
+
+async def test_delay_task_exception_should_be_published_to_delay_queue(
+    dummy_request, rabbitmq_container, amqp_worker, amqp_channel
+):
+    task_vars.request.set(dummy_request)
+    ts = await _test_delay_queue()
+    # wait for it to finish
+    await ts.join(0.1)
+    amqp_worker.max_task_retries = 5
+    assert amqp_worker.total_run == 1
+    await amqp_worker.join()
+    state = await ts.get_state()
+    assert state["status"] == TaskStatus.SLEEPING
+
+    task_id = state["job_data"]["task_id"]
+
+    # Check that the job has been moved to the delay queue and
+    # verify the task id
+
+    delayed = await amqp_worker.queue_delayed(amqp_channel)
+    # we want greater than 2 since 2 other delay queue messages are there
+    assert delayed["message_count"] > 2
+
+    async def callback(channel, body, envelope, properties):
+        decoded = json.loads(body)
+        assert decoded["task_id"] == task_id
+
+    await amqp_channel.basic_consume(callback, queue_name=delayed["queue"])
     task_vars.request.set(None)
 
 

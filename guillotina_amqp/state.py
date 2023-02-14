@@ -63,6 +63,7 @@ class TaskStatus:
     RUNNING = "running"
     FINISHED = "finished"
     ERRORED = "errored"
+    SLEEPING = "sleeping"
 
 
 @configure.utility(provides=IStateManagerUtility, name="memory")
@@ -355,6 +356,7 @@ class TaskState:
                 TaskStatus.FINISHED,
                 TaskStatus.ERRORED,
                 TaskStatus.CANCELED,
+                TaskStatus.SLEEPING,
             ):
                 return data
             await asyncio.sleep(wait)

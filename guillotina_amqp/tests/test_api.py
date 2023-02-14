@@ -53,7 +53,6 @@ async def test_info_task(container_requester, dummy_request):
 
 
 async def test_cancel_task(container_requester, dummy_request):
-
     async with container_requester as requester:
         task_vars.request.set(dummy_request)
         task_vars.db.set(requester.db)
