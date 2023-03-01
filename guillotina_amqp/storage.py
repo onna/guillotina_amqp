@@ -5,14 +5,15 @@ from guillotina.db.storages.utils import register_sql
 from guillotina.utils import get_current_container
 from guillotina.utils import get_current_transaction
 
-import logging
 import json
+import logging
+
 
 register_sql(
-    "FETCH_AMQP_TASK_SUMMARY", 
+    "FETCH_AMQP_TASK_SUMMARY",
     f"""
     SELECT * FROM {{table_name}} where task_id = $1
-    """
+    """,
 )
 
 logger = logging.getLogger("onna.canonical")
@@ -37,9 +38,9 @@ async def fetch_amqp_task_summary(task_id):
                     summary = json.loads(row.get("summary", "{}"))
                     updated = summary.get("finished_at")
                     return {
-                        "result": summary,
                         "status": row.get("status"),
-                        "updated": updated
+                        "result": summary,
+                        "updated": updated,
                     }
     except UndefinedTableError:
-        logger.warning(f"{{table_name}} has not yet initialized, cannot perform query.")
+        logger.warning(f"{table_name} has not yet initialized, cannot perform query.")
