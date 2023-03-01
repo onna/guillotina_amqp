@@ -28,4 +28,5 @@ async def fetch_amqp_task_summary(task_id):
                 )
                 return row
     except UndefinedTableError:
-        logger.warning(f"{{table_name}} has not yet initialized, cannot perform query.")
+        pass
+        # logger.warning(f"{{table_name}} has not yet initialized, cannot perform query.")
