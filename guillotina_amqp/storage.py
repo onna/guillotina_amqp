@@ -8,7 +8,7 @@ from guillotina.utils import get_current_transaction
 import logging
 
 register_sql(
-    "FETCH_AMQP_TASK_SUMMARY", "SELECT * FROM {{table_name}} where task_id = $1"
+    "FETCH_AMQP_TASK_SUMMARY", f"SELECT * FROM {{table_name}} where task_id = $1"
 )
 
 logger = logging.getLogger("onna.canonical")
