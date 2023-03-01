@@ -33,7 +33,6 @@ async def fetch_amqp_task_summary(task_id):
                     txn.storage.sql.get("FETCH_AMQP_TASK_SUMMARY", table_name),
                     task_id,
                 )
-                print(row.__dict__)
                 if row:
                     summary = json.loads(row.get("summary", "{}"))
                     updated = summary.get("finished_at")
