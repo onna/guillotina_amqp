@@ -1,6 +1,7 @@
 from .state import get_state_manager
 from .state import TaskState
 from .utils import get_task_id_prefix
+from .storage import fetch_amqp_task_summary
 from guillotina import configure
 from guillotina.interfaces import IContainer
 from guillotina.response import HTTPNotFound
@@ -56,6 +57,9 @@ async def info_task(context, request):
     if not request.matchdict["task_id"].startswith(task_prefix):
         return HTTPNotFound(content={"reason": "Task not found"})
     try:
+        state_summary = await fetch_amqp_task_summary(request.matchdict["task_id"])
+        if (state_summary):
+            return state_summary
         task = TaskState(request.matchdict["task_id"])
         state = await task.get_state()
         if not can_debug_amqp(context):
