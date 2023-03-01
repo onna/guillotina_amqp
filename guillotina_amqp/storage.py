@@ -35,10 +35,12 @@ async def fetch_amqp_task_summary(task_id):
                 )
                 print(row.__dict__)
                 if row:
+                    summary = json.loads(row.get("summary", "{}"))
+                    updated = summary.get("finished_at")
                     return {
-                        "result": json.loads(row.get("summary", "{}")),
+                        "result": summary,
                         "status": row.get("status"),
-                        "updated": row.get("finished_at"),
+                        "updated": updated
                     }
     except UndefinedTableError:
         logger.warning(f"{{table_name}} has not yet initialized, cannot perform query.")
