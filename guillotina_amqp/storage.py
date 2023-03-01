@@ -11,9 +11,7 @@ import logging
 
 register_sql(
     "FETCH_AMQP_TASK_SUMMARY",
-    f"""
-    SELECT * FROM {{table_name}} where task_id = $1
-    """,
+    f"SELECT * FROM {{table_name}} where task_id = $1", # noqa
 )
 
 logger = logging.getLogger("onna.canonical")
