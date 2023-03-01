@@ -1,7 +1,7 @@
-from guillotina.db.storages.utils import register_sql
 from asyncpg.exceptions import UndefinedTableError
 from guillotina.db.interfaces import IPostgresStorage
 from guillotina.db.storages.pg import watch as watch_pg
+from guillotina.db.storages.utils import register_sql
 from guillotina.utils import get_current_container
 from guillotina.utils import get_current_transaction
 
