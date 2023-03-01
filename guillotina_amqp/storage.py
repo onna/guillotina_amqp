@@ -6,9 +6,13 @@ from guillotina.utils import get_current_container
 from guillotina.utils import get_current_transaction
 
 import logging
+import json
 
 register_sql(
-    "FETCH_AMQP_TASK_SUMMARY", f"SELECT * FROM {{table_name}} where task_id = $1"
+    "FETCH_AMQP_TASK_SUMMARY", 
+    f"""
+    SELECT * FROM {{table_name}} where task_id = $1
+    """
 )
 
 logger = logging.getLogger("onna.canonical")
@@ -19,7 +23,6 @@ async def fetch_amqp_task_summary(task_id):
     container_name = get_current_container().id
     table_name = f"{container_name}_amqp_tasks"
     if not IPostgresStorage.providedBy(txn.storage):
-        print("are we hitting this")
         return
     try:
         container_name = get_current_container().id
@@ -30,10 +33,10 @@ async def fetch_amqp_task_summary(task_id):
                     txn.storage.sql.get("FETCH_AMQP_TASK_SUMMARY", table_name),
                     task_id,
                 )
-                print("what is this row: ", row)
+                print(row.__dict__)
                 if row:
                     return {
-                        "result": row.get("summary"),
+                        "result": json.loads(row.get("summary", "{}")),
                         "status": row.get("status"),
                         "updated": row.get("finished_at"),
                     }
