@@ -376,6 +376,7 @@ class TaskState:
         - running
         - finished
         - errored
+        - sleeping
         """
         util = get_state_manager()
         data = await util.get(self.task_id)

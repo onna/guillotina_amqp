@@ -58,7 +58,9 @@ async def info_task(context, request):
         return HTTPNotFound(content={"reason": "Task not found"})
     try:
         state_summary = await fetch_amqp_task_summary(request.matchdict["task_id"])
+        print("the state summary")
         if state_summary:
+            print("we have no state summary")
             return state_summary
         task = TaskState(request.matchdict["task_id"])
         state = await task.get_state()
