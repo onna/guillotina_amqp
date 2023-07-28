@@ -90,7 +90,7 @@ class WorkerCommand(ServerCommand):
             port = arguments.port or settings.get("address", settings.get("port"))
             app = web.Application()
             app.router.add_get("/metrics", prometheus_view)
-            web.run_app(app, port=port or 8080)
+            web.run_app(app, port=port or 8080, loop=loop)
         else:
             loop.run_until_complete(self.run_worker(arguments, settings, app))
 
