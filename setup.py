@@ -36,15 +36,18 @@ setup(
             "pytest-asyncio==0.10.0",
             "pytest-cov>=2.6.1,<=2.9.0",
             "coverage>=4.4",
-            "pytest-docker-fixtures[rabbitmq]==1.3.5",
+            "pytest-docker-fixtures[rabbitmq]==1.3.11",
             "prometheus-client>=0.8.0",
+            "mypy-zope==0.2.0",
+            "zope.interface==5.0.1",
+            "urllib3==1.26.5"
         ]
     },
     license="BSD",
     classifiers=[
         "License :: OSI Approved :: BSD License",
         "Development Status :: 3 - Alpha",
-        "Programming Language :: Python :: 3.7",
+        "Programming Language :: Python :: 3.8",
         "Topic :: Software Development :: Libraries :: Python Modules",
         "Topic :: Internet :: WWW/HTTP",
         "Intended Audience :: Developers",
