@@ -50,7 +50,9 @@ def generate_task_id():
     return str(uuid.uuid4())
 
 
-async def add_task(func, *args, _request=None, _retries=3, _task_id=None, **kwargs):
+async def add_task(
+    func, *args, _request=None, _retries=3, _task_id=None, dest_queue=None, **kwargs
+):
     """Given a function and its arguments, it adds it as a task to be ran
     by workers.
     """
@@ -115,12 +117,17 @@ async def add_task(func, *args, _request=None, _retries=3, _task_id=None, **kwar
                     "task_id": task_id,
                 }
             )
+
             # Publish task data on rabbitmq
+            dest_queue = (
+                app_settings["amqp"]["queue"] if dest_queue is None else dest_queue
+            )
+
             with watch_amqp("publish"):
                 await channel.publish(
                     data,
                     exchange_name=app_settings["amqp"]["exchange"],
-                    routing_key=app_settings["amqp"]["queue"],
+                    routing_key=dest_queue,
                     properties={"delivery_mode": 2},
                 )
             # Update tasks's global state
@@ -160,7 +167,7 @@ async def _yield_object_task(dotted_func, path, *args, **kwargs):
 
 
 async def add_object_task(
-    callable=None, ob=None, *args, _request=None, _retries=3, **kwargs
+    callable=None, ob=None, *args, _request=None, _retries=3, dest_queue=None, **kwargs
 ):
     superfunc = _run_object_task
     if inspect.isasyncgenfunction(callable):
@@ -173,6 +180,7 @@ async def add_object_task(
         *args,
         _request=_request,
         _retries=_retries,
+        dest_queue=dest_queue,
         **kwargs,
     )
 
