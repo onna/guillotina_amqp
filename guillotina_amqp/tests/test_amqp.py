@@ -50,10 +50,10 @@ async def test_add_task_to_specific_queue(
     configured_state_manager,
 ):
 
-    new_queue = "new_queue"
+    new_queue = "new_queue" + str(time.time())
 
     # Declare a new queue
-    await amqp_channel.queue_declare(
+    new_queue_info = await amqp_channel.queue_declare(
         queue_name=new_queue,
         durable=True,
         passive=False,
@@ -70,8 +70,11 @@ async def test_add_task_to_specific_queue(
         routing_key=new_queue,
     )
 
+    await asyncio.sleep(1)
+    assert new_queue_info["message_count"] == 0
+
     task_vars.request.set(dummy_request)
-    ts = await add_task(_test_func, 1, 2, dest_queue="new_queue")
+    await add_task(_test_func, 1, 2, dest_queue=new_queue)
 
     new_queue_info = await amqp_channel.queue_declare(
         queue_name=new_queue,
@@ -84,6 +87,7 @@ async def test_add_task_to_specific_queue(
         },
     )
 
+    await asyncio.sleep(1)
     assert new_queue_info["message_count"] == 1
 
 
