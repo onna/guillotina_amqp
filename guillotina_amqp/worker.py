@@ -323,10 +323,10 @@ class Worker:
         self.total_run += 1
         try:
             result = task.result()
-            logger.debug(f"Task data: {task._job.data}, result: {result}")
+            logger.debug(f"Task data: {task_id}, result: {result}")
         except asyncio.CancelledError:
             if await self._state_manager.is_canceled(task_id):
-                logger.warning(f"Task got cancelled: {task._job.data}")
+                logger.warning(f"Task got cancelled: {task_id}")
                 return await self._handle_canceled(task)
             logger.error(
                 "Encountered asyncio.CancelledError without task being "
