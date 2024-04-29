@@ -1,3 +1,8 @@
+5.0.29 (2024-04-29)
+-------------------
+- Reduce logging when task is cancelled
+
+
 5.0.28 (2022-12-07)
 -------------------
 - Requeue when locked via delay queue, skip if task status is "finished"
