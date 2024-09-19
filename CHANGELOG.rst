@@ -1,6 +1,6 @@
 5.0.29 (2024-04-29)
 -------------------
-- Reduce logging when task is cancelled
+- run_app with existing loop
 
 
 5.0.28 (2022-12-07)
