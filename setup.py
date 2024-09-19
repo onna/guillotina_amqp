@@ -9,7 +9,7 @@ except IOError:
 
 setup(
     name="guillotina_amqp",
-    version="5.0.28",
+    version="5.0.29",
     description="Integrate amqp into guillotina",
     long_description=README,
     install_requires=[
@@ -40,7 +40,7 @@ setup(
             "prometheus-client>=0.8.0",
             "mypy-zope==0.2.0",
             "zope.interface==5.0.1",
-            "urllib3==1.26.5"
+            "urllib3==1.26.5",
         ]
     },
     license="BSD",
