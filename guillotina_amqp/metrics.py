@@ -85,5 +85,23 @@ try:
                 labels={"type": operation},
             )
 
+    AMQP_TASK_DISPATCHED = prometheus_client.Counter(
+        "guillotina_amqp_task_dispatched_total",
+        "Tasks published to AMQP queues",
+        labelnames=["container", "function", "queue"],
+    )
+    AMQP_TASK_COMPLETED = prometheus_client.Counter(
+        "guillotina_amqp_task_completed_total",
+        "Tasks completed by AMQP workers",
+        labelnames=["container", "function", "queue", "status"],
+    )
+    AMQP_TASK_DURATION = prometheus_client.Histogram(
+        "guillotina_amqp_task_duration_seconds",
+        "AMQP task execution wall time",
+        labelnames=["container", "function", "queue"],
+        buckets=(0.1, 0.5, 1.0, 5.0, 10.0, 30.0, 60.0, 300.0, 600.0, INF),
+    )
+
 except ImportError:
+    AMQP_TASK_DISPATCHED = AMQP_TASK_COMPLETED = AMQP_TASK_DURATION = None  # type: ignore
     watch_job = watch_amqp = watch_job_request = watch_job_commit = metrics.dummy_watch  # type: ignore

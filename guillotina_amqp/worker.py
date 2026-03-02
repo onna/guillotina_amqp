@@ -1,3 +1,5 @@
+from .metrics import AMQP_TASK_COMPLETED
+from .metrics import AMQP_TASK_DURATION
 from .metrics import watch_amqp
 from guillotina import app_settings
 from guillotina import glogging
@@ -188,6 +190,7 @@ class Worker:
         record_op_metric(job.function_name, TaskStatus.RUNNING)
 
         task._job = job
+        task._started_at = time.monotonic()
         job.task = task
         self._running.append(task)
         task.add_done_callback(self._task_done_callback)
@@ -321,10 +324,12 @@ class Worker:
         """This is called when a job finishes execution"""
         task_id = task._job.data["task_id"]
         self.total_run += 1
+        _status = "success"
         try:
             result = task.result()
             logger.debug(f"Task data: {task_id}, result: {result}")
         except asyncio.CancelledError:
+            _status = "canceled"
             if await self._state_manager.is_canceled(task_id):
                 logger.warning(f"Task got cancelled: {task_id}")
                 return await self._handle_canceled(task)
@@ -334,9 +339,11 @@ class Worker:
             )
             return await self._handle_unexpected_error(task, task_id)
         except DelayTaskException:
+            _status = "delayed"
             logger.warning(f"Sending task {task_id} to the delay queue")
             return await self._handle_send_to_delay_queue(task, task_id)
         except Exception:
+            _status = "error"
             logger.error(f"Unhandled task exception: {task_id}")
             return await self._handle_unexpected_error(task, task_id)
         else:
@@ -347,6 +354,21 @@ class Worker:
                 self._running.remove(task)
             if not self.ignore_lock:
                 await self.state_manager.release(task_id)
+
+            # Record per-container completion metrics
+            if AMQP_TASK_COMPLETED is not None:
+                _container_id = task._job.data.get("container_id") or "unknown"
+                _func = task._job.function_name
+                _labels = dict(
+                    container=_container_id, function=_func, queue=self.QUEUE_MAIN,
+                )
+                AMQP_TASK_COMPLETED.labels(**_labels, status=_status).inc()
+                if AMQP_TASK_DURATION is not None:
+                    _started = getattr(task, "_started_at", None)
+                    if _started is not None:
+                        AMQP_TASK_DURATION.labels(**_labels).observe(
+                            time.monotonic() - _started
+                        )
 
     async def stop(self):
         self.cancel()
