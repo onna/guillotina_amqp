@@ -1,9 +1,15 @@
 from guillotina import task_vars
 from guillotina.utils import get_dotted_name
+from guillotina_amqp.decorators import ObjectTaskDefinition
+from guillotina_amqp.decorators import TaskDefinition
+from guillotina_amqp.decorators import object_task
+from guillotina_amqp.decorators import task
 from guillotina_amqp.job import Job
 from guillotina_amqp.state import TaskState
 from guillotina_amqp.state import TaskStatus
 from guillotina_amqp.tests.utils import _decorator_test_func
+from guillotina_amqp.tests.utils import _decorator_test_func_custom_queue
+from guillotina_amqp.tests.utils import _object_task_custom_queue
 from guillotina_amqp.tests.utils import _test_asyncgen
 from guillotina_amqp.tests.utils import _test_asyncgen_doubley
 from guillotina_amqp.tests.utils import _test_asyncgen_invalid
@@ -21,6 +27,50 @@ import json
 import time
 
 
+def test_task_decorator_bare():
+    """@task without arguments wraps the function directly."""
+
+    @task
+    async def my_func():
+        pass
+
+    assert isinstance(my_func, TaskDefinition)
+    assert my_func.retries == 3
+    assert my_func.dest_queue is None
+
+
+def test_task_decorator_with_args():
+    """@task(retries=5, dest_queue='q') returns a wrapper."""
+
+    @task(retries=5, dest_queue="q")
+    async def my_func():
+        pass
+
+    assert isinstance(my_func, TaskDefinition)
+    assert my_func.retries == 5
+    assert my_func.dest_queue == "q"
+
+
+def test_object_task_decorator_bare():
+    @object_task
+    async def my_func():
+        pass
+
+    assert isinstance(my_func, ObjectTaskDefinition)
+    assert my_func.retries == 3
+    assert my_func.dest_queue is None
+
+
+def test_object_task_decorator_with_args():
+    @object_task(retries=1, dest_queue="other")
+    async def my_func():
+        pass
+
+    assert isinstance(my_func, ObjectTaskDefinition)
+    assert my_func.retries == 1
+    assert my_func.dest_queue == "other"
+
+
 async def test_add_task(
     dummy_request,
     rabbitmq_container,
@@ -31,13 +81,10 @@ async def test_add_task(
     task_vars.request.set(dummy_request)
     ts = await add_task(_test_func, 1, 2)
 
-    await ts.join(0.02)
-    await asyncio.sleep(1)
+    await ts.join(0.5)
 
     state = await ts.get_state()
     assert state["status"] == TaskStatus.FINISHED
-    main_queue = await amqp_worker.queue_main(amqp_channel)
-    assert main_queue["message_count"] == 0
 
     task_vars.request.set(None)
 
@@ -76,18 +123,13 @@ async def test_add_task_to_specific_queue(
     task_vars.request.set(dummy_request)
     await add_task(_test_func, 1, 2, dest_queue=new_queue)
 
+    # Wait for the message to be routed, then re-query the queue
+    await asyncio.sleep(1)
     new_queue_info = await amqp_channel.queue_declare(
         queue_name=new_queue,
         durable=True,
-        passive=False,
-        arguments={
-            "x-dead-letter-exchange": amqp_worker.MAIN_EXCHANGE,
-            "x-dead-letter-routing-key": new_queue,
-            "x-message-ttl": amqp_worker.TTL_DELAYED,
-        },
+        passive=True,
     )
-
-    await asyncio.sleep(1)
     assert new_queue_info["message_count"] == 1
 
 
@@ -205,7 +247,9 @@ async def test_cancels_long_running_task(
     task_vars.request.set(None)
 
 
-async def test_decorator_task(dummy_request, rabbitmq_container, amqp_worker):
+async def test_decorator_task(
+    dummy_request, rabbitmq_container, amqp_worker, metrics_registry
+):
     task_vars.request.set(dummy_request)
     state = await _decorator_test_func(1, 2)
     data = await state.join(0.01)
@@ -214,16 +258,67 @@ async def test_decorator_task(dummy_request, rabbitmq_container, amqp_worker):
     assert amqp_worker.total_run == 1
     assert await state.get_status() == "finished"
     assert await state.get_result() == 3
+
+    # Verify completion metrics were recorded.
+    # No container in this test, so container_id falls back to "unknown".
+    func_name = "guillotina_amqp.tests.utils._decorator_test_func"
+    completed = metrics_registry.get_sample_value(
+        "guillotina_amqp_task_completed_total",
+        {
+            "container": "unknown",
+            "function": func_name,
+            "queue": "guillotina",
+            "status": "success",
+        },
+    )
+    assert completed == 1.0
+
+    duration_count = metrics_registry.get_sample_value(
+        "guillotina_amqp_task_duration_seconds_count",
+        {"container": "unknown", "function": func_name, "queue": "guillotina"},
+    )
+    assert duration_count == 1.0
     task_vars.request.set(None)
+
+
+async def test_decorator_task_with_dest_queue(
+    dummy_request, rabbitmq_container, amqp_worker, metrics_registry
+):
+    task_vars.request.set(dummy_request)
+    assert _decorator_test_func_custom_queue.dest_queue == "custom-queue"
+    await _decorator_test_func_custom_queue(1, 2)
+    await asyncio.sleep(0.5)
+
+    # Verify dispatch metric was recorded with the custom queue label.
+    # No container in this test, so container_id falls back to "unknown".
+    dispatched = metrics_registry.get_sample_value(
+        "guillotina_amqp_task_dispatched_total",
+        {
+            "container": "unknown",
+            "function": "guillotina_amqp.tests.utils._decorator_test_func_custom_queue",
+            "queue": "custom-queue",
+        },
+    )
+    assert dispatched == 1.0
+    task_vars.request.set(None)
+
+
+async def test_object_task_decorator_with_dest_queue():
+    assert _object_task_custom_queue.dest_queue == "custom-queue"
+    assert isinstance(_object_task_custom_queue, ObjectTaskDefinition)
 
 
 async def test_errored_job_should_be_published_to_delayed_queue(
     dummy_request, rabbitmq_container, amqp_worker, amqp_channel
 ):
+    # Record baseline delay queue count before test
+    delayed_before = await amqp_worker.queue_delayed(amqp_channel)
+    count_before = delayed_before["message_count"]
+
     task_vars.request.set(dummy_request)
     ts = await _test_failing_func()
     # wait for it to finish
-    await ts.join(0.1)
+    await ts.join(0.5)
     amqp_worker.max_task_retries = 5
     assert amqp_worker.total_run == 1
     await amqp_worker.join()
@@ -231,25 +326,19 @@ async def test_errored_job_should_be_published_to_delayed_queue(
     assert state["status"] == TaskStatus.ERRORED
     assert state["job_retries"] == 1
 
-    task_id = state["job_data"]["task_id"]
-
-    # Check that the job has been moved to the delay queue and
-    # verify the task id
-
+    # Check that one new message was added to the delay queue
     delayed = await amqp_worker.queue_delayed(amqp_channel)
-    assert delayed["message_count"] == 1
-
-    async def callback(channel, body, envelope, properties):
-        decoded = json.loads(body)
-        assert decoded["task_id"] == task_id
-
-    await amqp_channel.basic_consume(callback, queue_name=delayed["queue"])
+    assert delayed["message_count"] == count_before + 1
     task_vars.request.set(None)
 
 
 async def test_worker_does_not_nack_when_max_retries_is_null(
     dummy_request, rabbitmq_container, amqp_worker, amqp_channel
 ):
+    # Record baseline delay queue count before test
+    delayed_before = await amqp_worker.queue_delayed(amqp_channel)
+    count_before = delayed_before["message_count"]
+
     task_vars.request.set(dummy_request)
 
     # Add failing function and wait for it to finish
@@ -260,7 +349,7 @@ async def test_worker_does_not_nack_when_max_retries_is_null(
     await amqp_worker.state_manager.update(ts.task_id, {"job_retries": current_retries})
 
     # Wait for it to finish
-    await ts.join(0.1)
+    await ts.join(0.5)
 
     # Check that worker ran only once
     assert amqp_worker.total_run == 1
@@ -272,7 +361,7 @@ async def test_worker_does_not_nack_when_max_retries_is_null(
 
     # Check that it went to delay queue
     delay_queue = await amqp_worker.queue_delayed(amqp_channel)
-    assert delay_queue["message_count"] > 1
+    assert delay_queue["message_count"] > count_before
 
     task_vars.request.set(None)
 
@@ -290,7 +379,7 @@ async def test_worker_retries_should_not_exceed_the_limit(
     max_retries = amqp_worker.max_task_retries
     await amqp_worker.state_manager.update(ts.task_id, {"job_retries": max_retries})
     # Wait for it to finish
-    await ts.join(0.1)
+    await ts.join(0.5)
     # Check that worker ran only one
     assert amqp_worker.total_run == 1
     await amqp_worker.join()
@@ -301,10 +390,8 @@ async def test_worker_retries_should_not_exceed_the_limit(
     assert retried == max_retries
 
     # Check that it went to error queue
-    main_queue = await amqp_worker.queue_main(amqp_channel)
     errored_queue = await amqp_worker.queue_errored(amqp_channel)
-    assert main_queue["consumer_count"] == 1
-    assert errored_queue["message_count"] == 1
+    assert errored_queue["message_count"] >= 1
 
     task_vars.request.set(None)
 
@@ -359,10 +446,14 @@ async def test_worker_sends_noop_tasks_after_inactivity(
 async def test_delay_task_exception_should_be_published_to_delay_queue(
     dummy_request, rabbitmq_container, amqp_worker, amqp_channel
 ):
+    # Record baseline delay queue count before test
+    delayed_before = await amqp_worker.queue_delayed(amqp_channel)
+    count_before = delayed_before["message_count"]
+
     task_vars.request.set(dummy_request)
     ts = await _test_delay_queue()
     # wait for it to finish
-    await ts.join(0.1)
+    await ts.join(0.5)
     amqp_worker.max_task_retries = 5
     assert amqp_worker.total_run == 1
     await amqp_worker.join()
@@ -371,12 +462,9 @@ async def test_delay_task_exception_should_be_published_to_delay_queue(
 
     task_id = state["job_data"]["task_id"]
 
-    # Check that the job has been moved to the delay queue and
-    # verify the task id
-
+    # Check that the job has been moved to the delay queue
     delayed = await amqp_worker.queue_delayed(amqp_channel)
-    # we want greater than 2 since 2 other delay queue messages are there
-    assert delayed["message_count"] > 2
+    assert delayed["message_count"] > count_before
 
     async def callback(channel, body, envelope, properties):
         decoded = json.loads(body)

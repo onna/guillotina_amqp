@@ -1,3 +1,4 @@
+from guillotina_amqp.decorators import object_task
 from guillotina_amqp.decorators import task
 from guillotina_amqp.exceptions import DelayTaskException
 from guillotina_amqp.interfaces import MessageType
@@ -48,3 +49,13 @@ async def _decorator_test_func(one, two):
 @task
 async def _test_delay_queue():
     raise DelayTaskException
+
+
+@task(dest_queue="custom-queue")
+async def _decorator_test_func_custom_queue(one, two):
+    return one + two
+
+
+@object_task(dest_queue="custom-queue")
+async def _object_task_custom_queue(one, two):
+    return one + two

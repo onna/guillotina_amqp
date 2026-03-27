@@ -87,8 +87,9 @@ def amqp_worker(loop):
 
 
 @pytest.fixture(scope="function", params=[{"redis_up": True}, {"redis_up": False}])
-def configured_state_manager(request, redis, dummy_request, loop):
+def configured_state_manager(request, dummy_request, loop):
     if request.param.get("redis_up"):
+        redis = request.getfixturevalue("redis")
         # Redis
         app_settings["amqp"]["persistent_manager"] = "redis"
         app_settings["redis_prefix_key"] = f"amqpjobs-{uuid.uuid4()}-"
