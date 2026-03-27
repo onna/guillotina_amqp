@@ -39,8 +39,7 @@ try:
 
 except ImportError:
 
-    def record_op_metric(type: str, status: str) -> None:
-        ...
+    def record_op_metric(type: str, status: str) -> None: ...
 
 
 logger = glogging.getLogger("guillotina_amqp.worker")
@@ -360,7 +359,9 @@ class Worker:
                 _container_id = task._job.data.get("container_id") or "unknown"
                 _func = task._job.function_name
                 _labels = dict(
-                    container=_container_id, function=_func, queue=self.QUEUE_MAIN,
+                    container=_container_id,
+                    function=_func,
+                    queue=self.QUEUE_MAIN,
                 )
                 AMQP_TASK_COMPLETED.labels(**_labels, status=_status).inc()
                 if AMQP_TASK_DURATION is not None:

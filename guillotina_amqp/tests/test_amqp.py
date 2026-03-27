@@ -29,6 +29,7 @@ import time
 
 def test_task_decorator_bare():
     """@task without arguments wraps the function directly."""
+
     @task
     async def my_func():
         pass
@@ -40,6 +41,7 @@ def test_task_decorator_bare():
 
 def test_task_decorator_with_args():
     """@task(retries=5, dest_queue='q') returns a wrapper."""
+
     @task(retries=5, dest_queue="q")
     async def my_func():
         pass

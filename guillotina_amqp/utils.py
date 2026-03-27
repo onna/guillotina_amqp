@@ -30,10 +30,12 @@ import uuid
 
 logger = glogging.getLogger("guillotina_amqp.utils")
 
-_OBJECT_TASK_WRAPPERS = frozenset({
-    "guillotina_amqp.utils._run_object_task",
-    "guillotina_amqp.utils._yield_object_task",
-})
+_OBJECT_TASK_WRAPPERS = frozenset(
+    {
+        "guillotina_amqp.utils._run_object_task",
+        "guillotina_amqp.utils._yield_object_task",
+    }
+)
 
 
 async def cancel_task(task_id):
@@ -144,7 +146,9 @@ async def add_task(
                 if dotted_name in _OBJECT_TASK_WRAPPERS and args:
                     _func_name = str(args[0])
                 AMQP_TASK_DISPATCHED.labels(
-                    container=_container_id, function=_func_name, queue=dest_queue,
+                    container=_container_id,
+                    function=_func_name,
+                    queue=dest_queue,
                 ).inc()
 
             # Update tasks's global state
