@@ -3,7 +3,7 @@ from guillotina_amqp.exceptions import TaskAlreadyAcquired
 from guillotina_amqp.state import get_state_manager
 
 import asyncio
-import asynctest
+from unittest.mock import patch
 import pytest
 
 
@@ -113,7 +113,7 @@ class MockedRedisGET:
 async def test_connection_reset_errors_are_retried(redis_state_manager, loop):
     state_manager = get_state_manager(loop)
     mocked = MockedRedisGET()
-    with asynctest.mock.patch("guillotina_amqp.state.aioredis.Redis.get", new=mocked):
+    with patch("guillotina_amqp.state.aioredis.Redis.get", new=mocked):
         with pytest.raises(ConnectionResetError):
             await state_manager.get("foo")
 

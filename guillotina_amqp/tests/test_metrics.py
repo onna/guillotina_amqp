@@ -3,7 +3,8 @@ from guillotina_amqp.tests.mocks import MockChannel
 from guillotina_amqp.tests.mocks import MockEnvelope
 from unittest.mock import MagicMock
 
-import asynctest
+from unittest.mock import AsyncMock
+from unittest.mock import patch
 import pytest
 
 
@@ -22,8 +23,8 @@ request_data = {
 
 @pytest.fixture(scope="function")
 def patched_job():
-    with asynctest.mock.patch("guillotina_amqp.job.Job.create_request"):
-        with asynctest.mock.patch("guillotina_amqp.job.Job._Job__run"):
+    with patch("guillotina_amqp.job.Job.create_request", new_callable=AsyncMock):
+        with patch("guillotina_amqp.job.Job._Job__run", new_callable=AsyncMock):
             yield
 
 
