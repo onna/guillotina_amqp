@@ -1,9 +1,15 @@
 from guillotina import task_vars
 from guillotina.utils import get_dotted_name
+from guillotina_amqp.decorators import ObjectTaskDefinition
+from guillotina_amqp.decorators import TaskDefinition
+from guillotina_amqp.decorators import object_task
+from guillotina_amqp.decorators import task
 from guillotina_amqp.job import Job
 from guillotina_amqp.state import TaskState
 from guillotina_amqp.state import TaskStatus
 from guillotina_amqp.tests.utils import _decorator_test_func
+from guillotina_amqp.tests.utils import _decorator_test_func_custom_queue
+from guillotina_amqp.tests.utils import _object_task_custom_queue
 from guillotina_amqp.tests.utils import _test_asyncgen
 from guillotina_amqp.tests.utils import _test_asyncgen_doubley
 from guillotina_amqp.tests.utils import _test_asyncgen_invalid
@@ -19,6 +25,48 @@ from guillotina_amqp.utils import cancel_task
 import asyncio
 import json
 import time
+
+
+def test_task_decorator_bare():
+    """@task without arguments wraps the function directly."""
+    @task
+    async def my_func():
+        pass
+
+    assert isinstance(my_func, TaskDefinition)
+    assert my_func.retries == 3
+    assert my_func.dest_queue is None
+
+
+def test_task_decorator_with_args():
+    """@task(retries=5, dest_queue='q') returns a wrapper."""
+    @task(retries=5, dest_queue="q")
+    async def my_func():
+        pass
+
+    assert isinstance(my_func, TaskDefinition)
+    assert my_func.retries == 5
+    assert my_func.dest_queue == "q"
+
+
+def test_object_task_decorator_bare():
+    @object_task
+    async def my_func():
+        pass
+
+    assert isinstance(my_func, ObjectTaskDefinition)
+    assert my_func.retries == 3
+    assert my_func.dest_queue is None
+
+
+def test_object_task_decorator_with_args():
+    @object_task(retries=1, dest_queue="other")
+    async def my_func():
+        pass
+
+    assert isinstance(my_func, ObjectTaskDefinition)
+    assert my_func.retries == 1
+    assert my_func.dest_queue == "other"
 
 
 async def test_add_task(
@@ -215,6 +263,59 @@ async def test_decorator_task(dummy_request, rabbitmq_container, amqp_worker):
     assert await state.get_status() == "finished"
     assert await state.get_result() == 3
     task_vars.request.set(None)
+
+
+async def test_decorator_task_with_dest_queue(
+    dummy_request, rabbitmq_container, amqp_worker, metrics_registry
+):
+    task_vars.request.set(dummy_request)
+    assert _decorator_test_func_custom_queue.dest_queue == "custom-queue"
+    state = await _decorator_test_func_custom_queue(1, 2)
+    data = await state.join(0.01)
+    assert data["result"] == 3
+    await asyncio.sleep(0.1)
+    assert amqp_worker.total_run == 1
+    assert await state.get_result() == 3
+
+    # Verify dispatch metric was recorded with correct queue label
+    dispatched = metrics_registry.get_sample_value(
+        "guillotina_amqp_task_dispatched_total",
+        {
+            "container": "guillotina",
+            "function": "guillotina_amqp.tests.utils._decorator_test_func_custom_queue",
+            "queue": "custom-queue",
+        },
+    )
+    assert dispatched == 1.0
+
+    # Verify completion metric was recorded
+    completed = metrics_registry.get_sample_value(
+        "guillotina_amqp_task_completed_total",
+        {
+            "container": "guillotina",
+            "function": "guillotina_amqp.tests.utils._decorator_test_func_custom_queue",
+            "queue": "guillotina",
+            "status": "success",
+        },
+    )
+    assert completed == 1.0
+
+    # Verify duration was recorded
+    duration_count = metrics_registry.get_sample_value(
+        "guillotina_amqp_task_duration_seconds_count",
+        {
+            "container": "guillotina",
+            "function": "guillotina_amqp.tests.utils._decorator_test_func_custom_queue",
+            "queue": "guillotina",
+        },
+    )
+    assert duration_count == 1.0
+    task_vars.request.set(None)
+
+
+async def test_object_task_decorator_with_dest_queue():
+    assert _object_task_custom_queue.dest_queue == "custom-queue"
+    assert isinstance(_object_task_custom_queue, ObjectTaskDefinition)
 
 
 async def test_errored_job_should_be_published_to_delayed_queue(
