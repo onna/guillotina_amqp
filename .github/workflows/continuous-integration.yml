@@ -20,6 +20,15 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       # Checkout the repository first
@@ -52,7 +61,7 @@ jobs:
           pip install -e .[test]
 
           # Run tests
-          RABBITMQ=localhost:5672 pytest --tb=native -v --capture=no guillotina_amqp --cov=guillotina_amqp --cov-report xml --cov-append guillotina_amqp
+          RABBITMQ=localhost:5672 REDIS=localhost:6379 pytest --tb=native -v --capture=no guillotina_amqp --cov=guillotina_amqp --cov-report xml --cov-append guillotina_amqp
 
           # install codecov library
           pip install codecov
