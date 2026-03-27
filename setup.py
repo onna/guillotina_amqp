@@ -13,7 +13,6 @@ setup(
     description="Integrate amqp into guillotina",
     long_description=README,
     install_requires=[
-        "guillotina>=5.0.0,<6",
         "aioamqp",
         "lru-dict",
         "aioredis<2.0.0",
@@ -38,7 +37,7 @@ setup(
             "pytest-docker-fixtures[rabbitmq]>=1.3.11",
             "prometheus-client>=0.8.0",
             "mypy-zope>=0.9",
-            "zope.interface>=5",
+            "zope.interface>=5,<7",
             "urllib3>=2",
         ]
     },

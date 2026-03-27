@@ -33,7 +33,10 @@ jobs:
       # Run tests
       - name: Run tests
         run: |
-          # Install package with test dependecies
+          # Install guillotina from onna fork
+          pip install git+https://github.com/onna/guillotina.git
+
+          # Install package with test dependencies
           pip install -e .[test]
 
           # Run tests
