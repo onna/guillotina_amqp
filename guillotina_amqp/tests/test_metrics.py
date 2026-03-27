@@ -24,7 +24,11 @@ request_data = {
 @pytest.fixture(scope="function")
 def patched_job():
     mock_request = MagicMock()
-    with patch("guillotina_amqp.job.Job.create_request", new_callable=AsyncMock, return_value=mock_request):
+    with patch(
+        "guillotina_amqp.job.Job.create_request",
+        new_callable=AsyncMock,
+        return_value=mock_request,
+    ):
         with patch("guillotina_amqp.job.Job._Job__run", new_callable=AsyncMock):
             yield
 
