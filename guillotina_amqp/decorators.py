@@ -11,13 +11,15 @@ import uuid
 
 @implementer(ITaskDefinition)
 class TaskDefinition:
-    def __init__(self, func, retries=3):
+    def __init__(self, func, retries=3, dest_queue=None):
         self.func = func
         self.retries = retries
+        self.dest_queue = dest_queue
 
     async def __call__(self, *args, _request=None, **kwargs):
         return await add_task(
-            self.func, _request=_request, _retries=self.retries, *args, **kwargs
+            self.func, _request=_request, _retries=self.retries,
+            dest_queue=self.dest_queue, *args, **kwargs
         )
 
     schedule = __call__
@@ -50,15 +52,26 @@ class TaskDefinition:
 class ObjectTaskDefinition(TaskDefinition):
     async def __call__(self, *args, _request=None, **kwargs):
         return await add_object_task(
-            self.func, _request=_request, _retries=self.retries, *args, **kwargs
+            self.func, _request=_request, _retries=self.retries,
+            dest_queue=self.dest_queue, *args, **kwargs
         )
 
     schedule = __call__
 
 
-def task(func, retries=3):
-    return TaskDefinition(func, retries)
+def task(func=None, retries=3, dest_queue=None):
+    if func is not None:
+        return TaskDefinition(func, retries=retries, dest_queue=dest_queue)
+
+    def wrapper(f):
+        return TaskDefinition(f, retries=retries, dest_queue=dest_queue)
+    return wrapper
 
 
-def object_task(func, retries=3):
-    return ObjectTaskDefinition(func, retries)
+def object_task(func=None, retries=3, dest_queue=None):
+    if func is not None:
+        return ObjectTaskDefinition(func, retries=retries, dest_queue=dest_queue)
+
+    def wrapper(f):
+        return ObjectTaskDefinition(f, retries=retries, dest_queue=dest_queue)
+    return wrapper
