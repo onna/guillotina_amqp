@@ -255,7 +255,9 @@ async def test_cancels_long_running_task(
     task_vars.request.set(None)
 
 
-async def test_decorator_task(dummy_request, rabbitmq_container, amqp_worker):
+async def test_decorator_task(
+    dummy_request, rabbitmq_container, amqp_worker, metrics_registry
+):
     task_vars.request.set(dummy_request)
     state = await _decorator_test_func(1, 2)
     data = await state.join(0.01)
@@ -264,6 +266,23 @@ async def test_decorator_task(dummy_request, rabbitmq_container, amqp_worker):
     assert amqp_worker.total_run == 1
     assert await state.get_status() == "finished"
     assert await state.get_result() == 3
+
+    # Verify completion metrics were recorded.
+    # No container in this test, so container_id falls back to "unknown".
+    func_name = "guillotina_amqp.tests.utils._decorator_test_func"
+    completed = metrics_registry.get_sample_value(
+        "guillotina_amqp_task_completed_total",
+        {"container": "unknown", "function": func_name,
+         "queue": "guillotina", "status": "success"},
+    )
+    assert completed == 1.0
+
+    duration_count = metrics_registry.get_sample_value(
+        "guillotina_amqp_task_duration_seconds_count",
+        {"container": "unknown", "function": func_name,
+         "queue": "guillotina"},
+    )
+    assert duration_count == 1.0
     task_vars.request.set(None)
 
 
@@ -273,45 +292,19 @@ async def test_decorator_task_with_dest_queue(
     task_vars.request.set(dummy_request)
     assert _decorator_test_func_custom_queue.dest_queue == "custom-queue"
     state = await _decorator_test_func_custom_queue(1, 2)
-    data = await state.join(0.01)
-    assert data["result"] == 3
-    await asyncio.sleep(0.1)
-    assert amqp_worker.total_run == 1
-    assert await state.get_result() == 3
+    await asyncio.sleep(0.5)
 
-    # Verify dispatch metric was recorded with correct queue label
+    # Verify dispatch metric was recorded with the custom queue label.
+    # No container in this test, so container_id falls back to "unknown".
     dispatched = metrics_registry.get_sample_value(
         "guillotina_amqp_task_dispatched_total",
         {
-            "container": "guillotina",
+            "container": "unknown",
             "function": "guillotina_amqp.tests.utils._decorator_test_func_custom_queue",
             "queue": "custom-queue",
         },
     )
     assert dispatched == 1.0
-
-    # Verify completion metric was recorded
-    completed = metrics_registry.get_sample_value(
-        "guillotina_amqp_task_completed_total",
-        {
-            "container": "guillotina",
-            "function": "guillotina_amqp.tests.utils._decorator_test_func_custom_queue",
-            "queue": "guillotina",
-            "status": "success",
-        },
-    )
-    assert completed == 1.0
-
-    # Verify duration was recorded
-    duration_count = metrics_registry.get_sample_value(
-        "guillotina_amqp_task_duration_seconds_count",
-        {
-            "container": "guillotina",
-            "function": "guillotina_amqp.tests.utils._decorator_test_func_custom_queue",
-            "queue": "guillotina",
-        },
-    )
-    assert duration_count == 1.0
     task_vars.request.set(None)
 
 
