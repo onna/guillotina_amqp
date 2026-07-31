@@ -79,7 +79,14 @@ class Worker:
         self._max_running = int(
             max_size or app_settings["amqp"].get("max_running_tasks", 5)
         )
-        self.max_task_retries = app_settings["amqp"].get("max_task_retries", None)
+        # Coerce to int: this is compared against an int retry counter in
+        # _handle_unexpected_error, and a str would raise TypeError there --
+        # inside a fire-and-forget callback, leaving the message neither acked
+        # nor nacked until prefetch starves the worker.
+        _max_task_retries = app_settings["amqp"].get("max_task_retries", None)
+        self.max_task_retries = (
+            None if _max_task_retries is None else int(_max_task_retries)
+        )
         self._closing = False
         self._state_manager = None
         self._state_ttl = int(app_settings["amqp"]["state_ttl"])

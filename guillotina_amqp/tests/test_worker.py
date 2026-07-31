@@ -1,10 +1,13 @@
+from guillotina import app_settings
 from guillotina_amqp.state import get_state_manager
 from guillotina_amqp.state import TaskStatus
 from guillotina_amqp.tests.mocks import MockChannel
 from guillotina_amqp.tests.mocks import MockEnvelope
 from guillotina_amqp.worker import Worker
+from unittest.mock import patch
 
 import json
+import pytest
 
 
 async def test_instance_attributes_defaults(dummy_request):
@@ -14,6 +17,37 @@ async def test_instance_attributes_defaults(dummy_request):
     assert worker.total_run == 0
     assert worker.total_errored == 0
     assert worker.sleep_interval == 0.1
+
+
+async def test_max_task_retries_uses_the_package_default(dummy_request):
+    # guillotina_amqp ships a default cap of 5 (see __init__.py). Consumers
+    # that set it to null opt into unbounded retries.
+    assert Worker().max_task_retries == 5
+
+
+async def test_max_task_retries_none_disables_the_cap(dummy_request):
+    with patch.dict(app_settings["amqp"], {"max_task_retries": None}):
+        worker = Worker()
+
+    assert worker.max_task_retries is None
+
+
+@pytest.mark.parametrize("configured", ["10", 10])
+async def test_max_task_retries_is_coerced_to_int(dummy_request, configured):
+    """The setting arrives as a str from the environment.
+
+    _handle_unexpected_error compares it against an int retry counter, and a
+    str raises TypeError there -- inside a fire-and-forget callback, so the
+    message ends up neither acked nor nacked and prefetch eventually starves
+    the worker.
+    """
+    with patch.dict(app_settings["amqp"], {"max_task_retries": configured}):
+        worker = Worker()
+
+    assert worker.max_task_retries == 10
+    assert isinstance(worker.max_task_retries, int)
+    # The comparison in _handle_unexpected_error must not raise.
+    assert (0 >= worker.max_task_retries) is False
 
 
 async def test_worker_acks_canceled_tasks(dummy_request, metrics_registry):
