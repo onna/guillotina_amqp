@@ -34,7 +34,7 @@ setup(
             "pytest-asyncio>=0.21,<1",
             "pytest-cov>=4",
             "coverage>=7",
-            "pytest-docker-fixtures[rabbitmq]>=1.3.11",
+            "pytest-docker-fixtures[rabbitmq]>=1.4.0",
             "prometheus-client>=0.8.0",
             "mypy-zope>=0.9",
             "zope.interface>=5,<7",
