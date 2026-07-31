@@ -147,7 +147,15 @@ class Job:
             if self.data.get("container_id"):
                 container = await context.async_get(self.data["container_id"])
                 if container is None:
-                    raise Exception(
+                    # The container was deleted while tasks referencing it were
+                    # still queued. Retrying can never resolve this, so raise
+                    # the permanent-failure sentinel: __call__ turns it into an
+                    # acked no-op instead of an unbounded retry loop.
+                    logger.warning(
+                        "Dropping task for deleted container: "
+                        f'{self.data["container_id"]} ({self.function_name})'
+                    )
+                    raise ObjectNotFoundException(
                         f'Could not find container: {self.data["container_id"]}'
                     )
                 g_task_vars.container.set(container)
@@ -165,10 +173,14 @@ class Job:
         return request
 
     async def __call__(self):
-        # Clone request for task
-        with watch_job_request:
-            request = await self.create_request()
+        request = None
         try:
+            # Clone request for task. This is inside the try so that a
+            # permanent failure raised while building the request (e.g. a
+            # deleted container) reaches the ObjectNotFoundException handler
+            # below rather than escaping to the worker's retry path.
+            with watch_job_request:
+                request = await self.create_request()
             with watch_job(self.function_name):
                 result = await self.__run(request)
             try:
